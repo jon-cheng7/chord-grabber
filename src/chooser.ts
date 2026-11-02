@@ -1,4 +1,4 @@
-// Reharm chooser: a sheet from the bottom with suggestions and a typed chord
+// Reharm chooser: try chords from the bottom sheet, DONE keeps one
 
 import { popIn, popOut } from './animate.ts';
 import { isChord } from './chord.ts';
@@ -10,6 +10,7 @@ export interface ChooserOptions {
     current: string | null;
     groups: OptionGroup[];
     hear: (chord: string) => void;
+    /** only on DONE */
     choose: (chord: string) => void;
     /** back to what the sheet had */
     revert?: () => void;
@@ -38,36 +39,47 @@ function button(
     return node;
 }
 
-let open: HTMLElement | null = null;
+let open: HTMLElement[] = [];
 
+/** closes without changing anything */
 export function closeChooser(): void {
-    const node = open;
-    open = null;
-    if (node) popOut(node, () => node.remove());
+    const nodes = open;
+    open = [];
+    for (const node of nodes) popOut(node, () => node.remove());
 }
+
+const tidy = (text: string): string =>
+    text.trim().replace(/♯/g, '#').replace(/♭/g, 'b');
 
 export function openChooser(o: ChooserOptions): void {
     closeChooser();
+    // tapping outside is cancel
+    const shade = el('div', 'cg-shade');
+    shade.addEventListener('click', closeChooser);
     const box = el('div', 'cg-chooser');
     box.setAttribute('role', 'dialog');
     box.setAttribute('aria-label', o.title);
-    let current = o.current;
+    let picked: string | null = null;
 
     const head = el('div', 'cg-chooser-head');
-    head.append(el('p', 'cg-chooser-title', o.title));
-    head.append(button('×', closeChooser, 'cg-icon'));
+    const titles = el('div', 'cg-chooser-titles');
+    titles.append(el('p', 'cg-chooser-title', o.title));
+    if (o.current)
+        titles.append(el('p', 'cg-chooser-now', `Now: ${o.current}`));
+    head.append(titles, button('×', closeChooser, 'cg-icon'));
     box.append(head);
 
+    const done = button('DONE', () => {
+        if (picked && picked !== o.current) o.choose(picked);
+        closeChooser();
+    }, 'cg-btn cg-btn-primary');
+
     const chips: HTMLButtonElement[] = [];
-    const mark = (): void => {
+    const stage = (chord: string | null): void => {
+        picked = chord;
         for (const c of chips)
-            c.classList.toggle('cg-on', c.dataset.chord === current);
-    };
-    const pick = (chord: string): void => {
-        current = chord;
-        o.hear(chord);
-        o.choose(chord);
-        mark();
+            c.classList.toggle('cg-on', c.dataset.chord === picked);
+        done.disabled = !picked || picked === o.current;
     };
 
     const list = el('div', 'cg-chooser-list');
@@ -75,8 +87,19 @@ export function openChooser(o: ChooserOptions): void {
         list.append(el('p', 'cg-pop-label', g.label));
         const row = el('div', 'cg-chips');
         for (const opt of g.options) {
-            const chip = button('', () => pick(opt.chord), 'cg-chip');
+            const chip = button(
+                '',
+                () => {
+                    input.value = '';
+                    status.textContent = '';
+                    status.className = 'cg-typed-status';
+                    stage(opt.chord);
+                    o.hear(opt.chord);
+                },
+                'cg-chip',
+            );
             chip.dataset.chord = opt.chord;
+            if (opt.chord === o.current) chip.classList.add('cg-chip-current');
             chip.append(
                 el('span', 'cg-chip-name', opt.chord),
                 el('span', 'cg-chip-why', opt.why),
@@ -88,34 +111,38 @@ export function openChooser(o: ChooserOptions): void {
     }
     box.append(list);
 
-    // any chord, typed
-    const typed = el('form', 'cg-typed');
+    // any chord, checked as you type
+    list.append(el('p', 'cg-pop-label', o.groups.length ? 'YOUR OWN' : 'CHORD'));
     const input = el('input', 'cg-typed-input');
     input.placeholder = 'Type a chord, e.g. F#m7';
     input.autocapitalize = 'off';
     input.autocomplete = 'off';
     input.spellcheck = false;
-    const use = el('button', 'cg-btn cg-btn-primary', 'USE');
-    use.type = 'submit';
-    typed.append(input, use);
-    typed.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const text = input.value.trim().replace(/♯/g, '#').replace(/♭/g, 'b');
-        if (!isChord(text)) {
-            input.classList.add('cg-bad');
-            input.setCustomValidity('Not a chord');
-            input.reportValidity();
+    input.enterKeyHint = 'done';
+    const status = el('p', 'cg-typed-status');
+    let heard = '';
+    input.addEventListener('input', () => {
+        const text = tidy(input.value);
+        if (!text) {
+            status.textContent = '';
+            status.className = 'cg-typed-status';
+            stage(null);
             return;
         }
-        input.classList.remove('cg-bad');
-        input.setCustomValidity('');
-        pick(text);
+        const ok = isChord(text);
+        status.className = `cg-typed-status ${ok ? 'cg-ok' : 'cg-bad'}`;
+        status.textContent = ok ? `✓ ${text}` : 'Not a chord yet';
+        input.classList.toggle('cg-bad', !ok);
+        stage(ok ? text : null);
     });
-    input.addEventListener('input', () => {
-        input.classList.remove('cg-bad');
-        input.setCustomValidity('');
+    // hear it once typing settles, not on every letter
+    input.addEventListener('change', () => {
+        if (picked && picked !== heard) o.hear((heard = picked));
     });
-    box.append(typed);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !done.disabled) done.click();
+    });
+    list.append(input, status);
 
     const foot = el('div', 'cg-chooser-foot');
     if (o.revert)
@@ -132,11 +159,14 @@ export function openChooser(o: ChooserOptions): void {
                 closeChooser();
             }),
         );
-    foot.append(button('DONE', closeChooser, 'cg-btn cg-btn-primary'));
+    foot.append(done);
     box.append(foot);
 
-    document.body.append(box);
-    open = box;
-    mark();
+    stage(null);
+    document.body.append(shade, box);
+    open = [shade, box];
+    popIn(shade);
     popIn(box);
+    // nothing to pick from: straight to typing
+    if (!o.groups.length) input.focus();
 }

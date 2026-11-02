@@ -1,13 +1,14 @@
 // Song view: the sheet, key, and the song menu
 
 import { popIn, popOut, slideClosed, slideOpen } from './animate.ts';
-import { playChords } from './audio.ts';
+import { holdChord, playChords, resetVoicing, stopHeld } from './audio.ts';
 import { closeChooser, openChooser } from './chooser.ts';
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
 import {
     applyEdits,
     chordAt,
+    passing,
     passingGaps,
     spots,
     suggestFor,
@@ -151,6 +152,14 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         el('h1', 'cg-title', s.title),
         el('p', 'cg-artist', s.artist),
     );
+    const playBtn = button(
+        '',
+        () => (stepping ? stopStep() : startStep()),
+        'cg-icon',
+    );
+    playBtn.title = 'Play from the top of the screen, or tap any chord';
+    playBtn.innerHTML = PLAY_ICON;
+    playBtn.setAttribute('aria-label', 'Play the chords');
     const shareBtn = button('', () => openPop(sharePop, shareBtn), 'cg-icon');
     shareBtn.innerHTML = SHARE_ICON;
     shareBtn.setAttribute('aria-label', 'Share or print');
@@ -196,26 +205,6 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                         draw();
                     },
                 },
-                {
-                    label: 'Reharm mode',
-                    on: () => reharm,
-                    pick: () => {
-                        reharm = !reharm;
-                        setPref('cg-reharm', reharm);
-                        draw();
-                    },
-                },
-                {
-                    label: 'Clear reharm',
-                    pick: () => {
-                        if (!edits.length) {
-                            toast('Nothing to clear');
-                            return;
-                        }
-                        saveEdits([]);
-                        toast('Back to the original');
-                    },
-                },
             ],
         },
         {
@@ -234,7 +223,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             ],
         },
     ]);
-    bar.append(back, titles, shareBtn, menuBtn, sharePop, menuPop);
+    bar.append(back, titles, playBtn, shareBtn, menuBtn, sharePop, menuPop);
     const setView = (next: View): void => {
         view = next;
         setPref('cg-view', view);
@@ -243,6 +232,40 @@ export function renderSong(app: HTMLElement, s: Saved): void {
 
     // key row: transpose, then text size
     const keyText = el('span', 'cg-key');
+    // reharm sits right under the key, on or off at a glance
+    const tools = el('div', 'cg-tools');
+    const reharmBtn = button(
+        '',
+        () => {
+            reharm = !reharm;
+            setPref('cg-reharm', reharm);
+            if (reharm && stepping) stopStep();
+            if (!reharm) closeChooser();
+            draw();
+        },
+        'cg-reharm-btn',
+    );
+    reharmBtn.innerHTML = `${SPARK_ICON}<span>REHARM</span>`;
+    const hint = el('p', 'cg-tools-hint');
+    const clear = button(
+        'CLEAR',
+        () => {
+            saveEdits([]);
+            toast('Back to the original');
+        },
+        'cg-tools-clear',
+    );
+    tools.append(reharmBtn, hint, clear);
+    const syncTools = (): void => {
+        reharmBtn.classList.toggle('cg-on', reharm);
+        reharmBtn.setAttribute('aria-pressed', String(reharm));
+        hint.textContent = reharm
+            ? 'Tap a chord to change it · + adds a passing chord'
+            : edits.length
+              ? `${edits.length} change${edits.length > 1 ? 's' : ''}`
+              : '';
+        clear.hidden = !edits.length;
+    };
     const key = el('div', 'cg-transpose');
     const middle = button(
         '',
@@ -335,7 +358,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         }
         window.scrollTo(0, 0);
         const top = sheet.getBoundingClientRect().top;
-        const below = pager.offsetHeight + 16;
+        const below =
+            pager.offsetHeight + 16 + (stepping ? stepBar.offsetHeight : 0);
         sheet.style.height = `${Math.max(200, innerHeight - top - below)}px`;
         goTo(pageIndex, false);
     };
@@ -359,7 +383,19 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             goTo(pageIndex + (dx < 0 ? 1 : -1));
     });
     sheet.addEventListener('click', (e) => {
+        if (stepping) {
+            tapStep(e.target as Element);
+            return;
+        }
         if (reharm && tapReharm(e.target as Element)) return;
+        // tapping a chord plays from there
+        const chord = (e.target as Element)
+            .closest('.cg-chord')
+            ?.closest<HTMLElement>('[data-at]');
+        if (!reharm && chord?.dataset.at) {
+            startStep(chord.dataset.at);
+            return;
+        }
         if (view !== 'pages') return;
         // edge taps turn the page too
         const x = e.clientX / innerWidth;
@@ -367,6 +403,17 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         else if (x < 0.25) goTo(pageIndex - 1);
     });
     const keys = (e: KeyboardEvent): void => {
+        if (stepping) {
+            // pedals send these too
+            if ([' ', 'ArrowRight', 'PageDown', 'Enter'].includes(e.key)) {
+                e.preventDefault();
+                go(cursor + 1);
+            } else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) {
+                e.preventDefault();
+                go(cursor - 1);
+            } else if (e.key === 'Escape') stopStep();
+            return;
+        }
         if (view !== 'pages') return;
         if (e.key === 'ArrowRight' || e.key === 'PageDown') goTo(pageIndex + 1);
         if (e.key === 'ArrowLeft' || e.key === 'PageUp') goTo(pageIndex - 1);
@@ -379,6 +426,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     addEventListener('keydown', keys);
     addEventListener('resize', resize);
     leaveSong = () => {
+        stopHeld();
+        app.classList.remove('cg-has-stepbar');
+        stepBar.remove();
         closeChooser();
         removeEventListener('keydown', keys);
         removeEventListener('resize', resize);
@@ -386,7 +436,10 @@ export function renderSong(app: HTMLElement, s: Saved): void {
 
     const draw = (): void => {
         sheet.replaceChildren(renderSheet(shown()));
+        sheet.classList.toggle('cg-reharm', reharm);
+        syncTools();
         if (reharm) decorate();
+        if (stepping) mark();
         keyText.textContent = keyLabel();
         fillPicker();
         if (view === 'pages') layout();
@@ -411,7 +464,10 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                     : { line, piece, chord },
             ]);
     };
-    const neighbours = (line: number, piece: number): string[] => {
+    const neighbours = (
+        line: number,
+        piece: number,
+    ): [string | null, string | null] => {
         const all = spots(edited());
         const earlier = (x: { line: number; piece: number }): boolean =>
             x.line < line || (x.line === line && x.piece < piece);
@@ -419,9 +475,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         const after = all.find(
             (x) => !earlier(x) && (x.line !== line || x.piece !== piece),
         );
-        return [before?.chord, after?.chord]
-            .filter((c): c is string => !!c)
-            .map(show);
+        return [before?.chord ?? null, after?.chord ?? null];
     };
     const showGroups = (groups: OptionGroup[]): OptionGroup[] =>
         groups.map((g) => ({
@@ -430,13 +484,27 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         }));
     let gaps: ReturnType<typeof passingGaps> = [];
     const decorate = (): void => {
-        sheet.classList.add('cg-reharm');
         for (const e of edits) {
             const node = sheet.querySelector(`[data-at="${e.line}:${e.piece}"]`);
             const chord = node?.classList.contains('cg-chord')
                 ? node
                 : node?.querySelector('.cg-chord');
             chord?.classList.add(e.added ? 'cg-chord-added' : 'cg-chord-edited');
+        }
+        for (const e of edits) {
+            if (e.chord !== null || e.added) continue;
+            const original = chordAt(lines, e.line, e.piece);
+            const node = sheet.querySelector(`[data-at="${e.line}:${e.piece}"]`);
+            // a lyric word's chord slot, or the emptied spot in a chord line
+            const slot = node?.classList.contains('cg-filler')
+                ? node
+                : node?.querySelector('.cg-chord');
+            if (!original || !slot || slot.textContent) continue;
+            const ghost = el('button', 'cg-ghost', show(original));
+            ghost.type = 'button';
+            ghost.dataset.at = `${e.line}:${e.piece}`;
+            ghost.setAttribute('aria-label', `Bring back ${show(original)}`);
+            slot.append(ghost);
         }
         gaps = passingGaps(edited(), written, writtenFlats);
         for (const g of gaps) {
@@ -452,6 +520,19 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         }
     };
     const tapReharm = (target: Element): boolean => {
+        // a removed chord, shown faintly: tap to bring it back
+        const ghost = target.closest<HTMLElement>('.cg-ghost');
+        if (ghost) {
+            const [line = 0, piece = 0] = (ghost.dataset.at ?? '')
+                .split(':')
+                .map(Number);
+            const original = chordAt(lines, line, piece);
+            if (original) {
+                setAt(line, piece, original);
+                playChords([show(original)]);
+            }
+            return true;
+        }
         const plus = target.closest<HTMLElement>('.cg-gap');
         if (plus) {
             const [line = 0, piece = 0] = (plus.dataset.gap ?? '')
@@ -463,28 +544,51 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                 title: `Passing chord: ${show(g.from)} → ${show(g.to)}`,
                 current: null,
                 groups: showGroups([{ label: 'TRY', options: g.options }]),
-                hear: (c) => playChords([show(g.from), c, show(g.to)]),
+                hear: (c) => playChords([c]),
                 choose: (c) => setAt(line, piece, store(c)),
             });
             return true;
         }
         const node = target
-            .closest('.cg-chord')
+            .closest('.cg-chord, .cg-words, .cg-plain')
             ?.closest<HTMLElement>('[data-at]');
         if (!node) return false;
         const [line = 0, piece = 0] = (node.dataset.at ?? '')
             .split(':')
             .map(Number);
         const now = chordAt(edited(), line, piece);
-        if (!now) return false;
+        if (!now) {
+            // a bare word: your own chord only, no suggestions
+            const word = node.textContent?.trim();
+            if (!word) return false;
+            openChooser({
+                title: `Add a chord on “${word}”`,
+                current: null,
+                groups: [],
+                hear: (c) => playChords([c]),
+                choose: (c) => setAt(line, piece, store(c)),
+            });
+            return true;
+        }
         const original = chordAt(lines, line, piece);
+        // an added chord stays a passing chord: only passing options
         const [before, after] = neighbours(line, piece);
+        const pass =
+            original === null && before && after
+                ? passing(before, after, written, writtenFlats)
+                : null;
         openChooser({
-            title: `Replace ${show(now)}`,
+            title: pass
+                ? `Passing chord: ${show(before!)} → ${show(after!)}`
+                : `Replace ${show(now)}`,
             current: show(now),
-            groups: showGroups(suggestFor(now, written, writtenFlats)),
-            hear: (c) =>
-                playChords([before, c, after].filter((x): x is string => !!x)),
+            groups: showGroups(
+                pass
+                    ? [{ label: 'TRY', options: pass.options }]
+                    : // from the sheet's own chord, so edits don't drift ever further
+                      suggestFor(original ?? now, written, writtenFlats),
+            ),
+            hear: (c) => playChords([c]),
             choose: (c) => setAt(line, piece, store(c)),
             revert:
                 original && original !== now
@@ -493,6 +597,111 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             remove: () => setAt(line, piece, null),
         });
         return true;
+    };
+
+    // step mode: one chord at a time, tap or pedal for the next
+    let stepping = false;
+    let cursor = 0;
+    const stepBar = el('div', 'cg-stepbar');
+    stepBar.hidden = true;
+    const nowName = el('span', 'cg-step-now');
+    const nextName = el('span', 'cg-step-next');
+    const names = el('div', 'cg-step-names');
+    names.append(nowName, nextName);
+    stepBar.append(
+        button('◀', () => go(cursor - 1), 'cg-icon'),
+        names,
+        button('▶', () => go(cursor + 1), 'cg-icon'),
+        button('■', () => stopStep(), 'cg-icon'),
+    );
+    const steps = () => spots(shown());
+    const nodeAt = (line: number, piece: number): Element | null => {
+        const node = sheet.querySelector(`[data-at="${line}:${piece}"]`);
+        return node?.classList.contains('cg-chord')
+            ? node
+            : (node?.querySelector('.cg-chord') ?? null);
+    };
+    const mark = (): void => {
+        sheet.querySelector('.cg-now')?.classList.remove('cg-now');
+        const at = steps()[cursor];
+        if (at) nodeAt(at.line, at.piece)?.classList.add('cg-now');
+    };
+    const follow = (node: Element): void => {
+        if (view === 'pages') {
+            const left =
+                node.getBoundingClientRect().left -
+                sheet.getBoundingClientRect().left +
+                sheet.scrollLeft;
+            const page = Math.floor(left / step());
+            if (page !== pageIndex) goTo(page);
+            return;
+        }
+        const r = node.getBoundingClientRect();
+        if (r.top < innerHeight * 0.25 || r.bottom > innerHeight * 0.7)
+            node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    };
+    const go = (i: number): void => {
+        const list = steps();
+        if (!list.length) return;
+        cursor = Math.min(list.length - 1, Math.max(0, i));
+        const at = list[cursor]!;
+        holdChord(at.chord);
+        mark();
+        nowName.textContent = at.chord;
+        nextName.textContent = list[cursor + 1]
+            ? `then ${list[cursor + 1]!.chord}`
+            : 'end';
+        const node = nodeAt(at.line, at.piece);
+        if (node) follow(node);
+    };
+    /** at: a line:piece to start from, else the first chord on screen */
+    const startStep = (at?: string): void => {
+        stepping = true;
+        closeChooser();
+        resetVoicing();
+        playBtn.innerHTML = STOP_ICON;
+        playBtn.setAttribute('aria-label', 'Stop playing');
+        sheet.classList.add('cg-stepping');
+        popIn(stepBar);
+        app.classList.add('cg-has-stepbar');
+        if (view === 'pages') layout();
+        const list = steps();
+        const first = at
+            ? list.findIndex((x) => `${x.line}:${x.piece}` === at)
+            : list.findIndex((x) => {
+                  const r = nodeAt(x.line, x.piece)?.getBoundingClientRect();
+                  return r && r.top > 0 && r.left >= 0 && r.right <= innerWidth;
+              });
+        go(Math.max(0, first));
+    };
+    const stopStep = (): void => {
+        stepping = false;
+        stopHeld();
+        playBtn.innerHTML = PLAY_ICON;
+        playBtn.setAttribute('aria-label', 'Play the chords');
+        sheet.classList.remove('cg-stepping');
+        sheet.querySelector('.cg-now')?.classList.remove('cg-now');
+        popOut(stepBar, () => {
+            app.classList.remove('cg-has-stepbar');
+            if (view === 'pages') layout();
+        });
+    };
+    /** a chord jumps there, anywhere else is next */
+    const tapStep = (target: Element): void => {
+        const node = target
+            .closest('.cg-chord')
+            ?.closest<HTMLElement>('[data-at]');
+        if (node?.dataset.at) {
+            const [line, piece] = node.dataset.at.split(':').map(Number);
+            const i = steps().findIndex(
+                (x) => x.line === line && x.piece === piece,
+            );
+            if (i >= 0) {
+                go(i);
+                return;
+            }
+        }
+        go(cursor + 1);
     };
 
     let link = '';
@@ -512,7 +721,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         relink();
     };
 
-    app.append(bar, key, picker, sheet, pager);
+    app.append(bar, key, tools, picker, sheet, pager, stepBar);
     draw();
     relink();
     layout();
@@ -520,6 +729,12 @@ export function renderSong(app: HTMLElement, s: Saved): void {
 }
 
 
+const SPARK_ICON =
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>';
+const PLAY_ICON =
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>';
+const STOP_ICON =
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
 const SHARE_ICON =
     '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
 const MENU_ICON =

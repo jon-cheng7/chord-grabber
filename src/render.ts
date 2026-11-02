@@ -41,7 +41,7 @@ export function renderSheet(lines: readonly Line[]): DocumentFragment {
                     const node = item.chord
                         ? el('span', 'cg-chord', item.chord)
                         : el('span', 'cg-filler', item.text);
-                    if (item.chord) node.dataset.at = `${i}:${k}`;
+                    node.dataset.at = `${i}:${k}`;
                     row.append(node);
                 });
                 out.append(row);
@@ -55,12 +55,17 @@ export function renderSheet(lines: readonly Line[]): DocumentFragment {
                 let k = 0;
                 for (const unit of line.units) {
                     const group = el('span', 'cg-unit');
-                    for (const p of unit)
-                        group.append(
-                            line.chords
-                                ? piece(p, `${i}:${k++}`)
-                                : document.createTextNode(p.text),
-                        );
+                    for (const p of unit) {
+                        const at = `${i}:${k++}`;
+                        if (line.chords) {
+                            group.append(piece(p, at));
+                            continue;
+                        }
+                        // no chords on the line: words still have a place
+                        const word = el('span', 'cg-plain', p.text);
+                        word.dataset.at = at;
+                        group.append(word);
+                    }
                     row.append(group);
                 }
                 out.append(row);

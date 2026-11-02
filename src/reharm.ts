@@ -61,7 +61,8 @@ export function applyEdits(
         if (line.kind === 'lyric') {
             let k = 0;
             const units = line.units.map((u) => u.map((p) => set(p, k++)));
-            return { ...line, units, chords: true };
+            const chords = units.some((u) => u.some((p) => p.chord));
+            return { ...line, units, chords };
         }
         if (line.kind === 'chords')
             return { ...line, items: line.items.map((p, k) => set(p, k)) };
@@ -264,8 +265,6 @@ export function passingGaps(
     key: string | null,
     flats: boolean,
 ): Gap[] {
-    const k = keyInfo(key, flats);
-    const n = (p: number): string => noteName(p, flats);
     const all = spots(lines);
     const best = new Map<number, Gap>();
 
@@ -283,61 +282,11 @@ export function passingGaps(
         const room = at - a.piece + 1;
         if (room < MIN_WORDS || at <= a.piece) return;
 
-        const ca = parseChord(a.chord);
-        const cb = parseChord(b.chord);
-        if (!ca || !cb) return;
-        const ra = pitch(ca.root);
-        const rb = pitch(cb.root);
-        const step = mod(rb - ra);
-        const bMinor = /m$/.test(core(b.chord));
-        const options: Option[] = [];
-        let fit = 0;
-        let place = at;
-        if (step === 2) {
-            options.push({ chord: `${n(ra + 1)}dim`, why: 'chromatic step up' });
-            fit = 1;
-        } else if (step === 10) {
-            options.push({ chord: `${core(a.chord)}/${n(ra - 1)}`, why: 'bass steps down' });
-            fit = 0.9;
-        } else if (step === 8 || step === 9) {
-            // walk the bass down a third through the note between
-            const mid = mod(ra - (step === 9 ? 1 : 2));
-            const over = k
-                ? [7, 0, 2, 4, 5, 9]
-                      .map((s) => `${n(k.tonic + s)}${DIATONIC[s]}`)
-                      .find((ch) => chordNotes(ch).tones.includes(mid))
-                : null;
-            if (over) {
-                const onRoot = chordNotes(over).bass === mid;
-                options.push({
-                    chord: onRoot ? over : `${over}/${n(mid)}`,
-                    why: 'bass walks down',
-                });
-                fit = 0.9;
-                place = Math.round((a.piece + 1 + at) / 2);
-            }
-        } else if (step === 3 || step === 4) {
-            const mid = mod(ra + 2);
-            options.push({ chord: `${core(a.chord)}/${n(mid)}`, why: 'bass walks up' });
-            fit = 0.8;
-            place = Math.round((a.piece + 1 + at) / 2);
-        } else if (step === 5) {
-            const third = mod(ra + (/m$/.test(core(a.chord)) ? 3 : 4));
-            options.push({ chord: `${core(a.chord)}/${n(third)}`, why: 'bass walks up' });
-            fit = 0.8;
-        } else if (step === 0) {
-            options.push({ chord: `${ca.root}sus4`, why: 'a lift and back' });
-            if (k) options.push({ chord: `${n(ra + 5)}/${n(ra)}`, why: '4 over the same bass' });
-            fit = 0.6;
-        }
-        // a lead-in works into almost anything but home
-        const lead = `${n(rb + 7)}7`;
-        if (!(k && rb === k.tonic && !bMinor) && lead !== a.chord) {
-            options.push({ chord: lead, why: `lead-in: pulls to ${b.chord}` });
-            fit = Math.max(fit, 0.7);
-        }
-        if (!options.length) return;
-
+        const pass = passing(a.chord, b.chord, key, flats);
+        if (!pass) return;
+        const { options, fit } = pass;
+        // a walking bass sits halfway along, the rest just before the change
+        let place = pass.walk ? Math.round((a.piece + 1 + at) / 2) : at;
         // landing on a new line or section counts most
         const landing = sameLine ? 0.5 : 1;
         const score = (Math.min(room, 6) / 6) * fit * landing;
@@ -349,4 +298,74 @@ export function passingGaps(
         if (!had || had.score < score) best.set(a.line, gap);
     });
     return [...best.values()];
+}
+
+/** chords that lead from one to the next, and how well they fit */
+export function passing(
+    from: string,
+    to: string,
+    key: string | null,
+    flats: boolean,
+): { options: Option[]; fit: number; walk: boolean } | null {
+    const ca = parseChord(from);
+    const cb = parseChord(to);
+    if (!ca || !cb) return null;
+    const k = keyInfo(key, flats);
+    const n = (p: number): string => noteName(p, flats);
+    const ra = pitch(ca.root);
+    const rb = pitch(cb.root);
+    const step = mod(rb - ra);
+    const options: Option[] = [];
+    let fit = 0;
+    let walk = false;
+    if (step === 2) {
+        options.push({ chord: `${n(ra + 1)}dim`, why: 'chromatic step up' });
+        fit = 1;
+    } else if (step === 10) {
+        options.push({
+            chord: `${core(from)}/${n(ra - 1)}`,
+            why: 'bass steps down',
+        });
+        fit = 0.9;
+    } else if (step === 8 || step === 9) {
+        // walk the bass down a third through the note between
+        const mid = mod(ra - (step === 9 ? 1 : 2));
+        const over = k
+            ? [7, 0, 2, 4, 5, 9]
+                  .map((s) => `${n(k.tonic + s)}${DIATONIC[s]}`)
+                  .find((ch) => chordNotes(ch).tones.includes(mid))
+            : null;
+        if (over) {
+            const onRoot = chordNotes(over).bass === mid;
+            options.push({
+                chord: onRoot ? over : `${over}/${n(mid)}`,
+                why: 'bass walks down',
+            });
+            fit = 0.9;
+            walk = true;
+        }
+    } else if (step === 3 || step === 4) {
+        options.push({
+            chord: `${core(from)}/${n(ra + 2)}`,
+            why: 'bass walks up',
+        });
+        fit = 0.8;
+        walk = true;
+    } else if (step === 5) {
+        const third = mod(ra + (/m$/.test(core(from)) ? 3 : 4));
+        options.push({ chord: `${core(from)}/${n(third)}`, why: 'bass walks up' });
+        fit = 0.8;
+    } else if (step === 0) {
+        options.push({ chord: `${ca.root}sus4`, why: 'a lift and back' });
+        options.push({ chord: `${n(ra + 5)}/${n(ra)}`, why: '4 over the same bass' });
+        fit = 0.6;
+    }
+    // a lead-in works into almost anything but home
+    const lead = `${n(rb + 7)}7`;
+    const home = k && rb === k.tonic && !/m$/.test(core(to));
+    if (!home && lead !== from) {
+        options.push({ chord: lead, why: `lead-in: pulls to ${to}` });
+        fit = Math.max(fit, 0.7);
+    }
+    return options.length ? { options, fit, walk } : null;
 }

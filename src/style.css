@@ -894,6 +894,12 @@ body {
     color: #ff9f6b;
 }
 
+/* words take a chord in reharm mode */
+.cg-reharm .cg-words,
+.cg-reharm .cg-plain {
+    cursor: pointer;
+}
+
 .cg-gap {
     display: inline-flex;
     align-items: center;
@@ -995,16 +1001,11 @@ body {
     font-size: 0.75rem;
 }
 
-.cg-typed {
-    display: flex;
-    gap: 0.4rem;
-    margin: 1rem 0 0;
-}
-
 /* 16px: iOS zooms into smaller inputs */
 .cg-typed-input {
-    flex: 1;
-    min-width: 0;
+    display: block;
+    width: 100%;
+    min-height: 2.75rem;
     padding: 0 0.8rem;
     border: 1px solid var(--cg-line);
     border-radius: 10px;
@@ -1027,4 +1028,184 @@ body {
     justify-content: flex-end;
     gap: 0.4rem;
     margin: 1rem 0 0;
+}
+
+/* Step mode: play the chords one at a time */
+
+.cg-stepbar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem var(--cg-pad) calc(0.6rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--cg-line);
+    background: rgba(10, 10, 10, 0.96);
+}
+
+.cg-stepbar[hidden] {
+    display: none;
+}
+
+.cg-stepbar .cg-icon {
+    flex: none;
+}
+
+.cg-step-names {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+}
+
+.cg-step-now {
+    color: var(--cg-accent);
+    font: 600 1.3rem var(--cg-mono);
+}
+
+.cg-step-next {
+    color: var(--cg-muted);
+    font: 400 0.7rem var(--cg-mono);
+    letter-spacing: 0.1em;
+}
+
+.cg-has-stepbar {
+    padding-bottom: 6rem;
+}
+
+.cg-stepping {
+    cursor: pointer;
+}
+
+.cg-chord.cg-now {
+    border-radius: 4px;
+    background: var(--cg-accent);
+    color: #0a0a0a;
+    box-shadow: 0 0 0 0.15em var(--cg-accent);
+}
+
+/* the words under the chord that's ringing */
+.cg-piece:has(.cg-now) .cg-words {
+    text-decoration: underline 2px var(--cg-accent);
+    text-underline-offset: 0.25em;
+}
+
+/* Reharm toggle: its own row under the key, in the edit colours */
+
+.cg-tools {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.5rem 0 0;
+}
+
+.cg-reharm-btn {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2.5rem;
+    padding: 0 0.9rem;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background:
+        linear-gradient(var(--cg-bg, #0a0a0a), var(--cg-bg, #0a0a0a)) padding-box,
+        linear-gradient(90deg, #7cc8ff, #ff9f6b) border-box;
+    color: var(--cg-fg);
+    font: 600 0.75rem var(--cg-mono);
+    letter-spacing: 0.12em;
+}
+
+.cg-reharm-btn svg {
+    color: #ff9f6b;
+}
+
+.cg-reharm-btn.cg-on {
+    background: linear-gradient(90deg, #7cc8ff, #ff9f6b) border-box;
+    color: #0a0a0a;
+}
+
+.cg-reharm-btn.cg-on svg {
+    color: #0a0a0a;
+}
+
+.cg-tools-hint {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    color: var(--cg-muted);
+    font-size: 0.75rem;
+}
+
+.cg-tools-clear {
+    flex: none;
+    padding: 0.4rem 0.2rem;
+    border: 0;
+    background: none;
+    color: var(--cg-muted);
+    font: 600 0.7rem var(--cg-mono);
+    letter-spacing: 0.12em;
+}
+
+.cg-tools-clear[hidden] {
+    display: none;
+}
+
+/* a removed chord: faint, tap to bring it back */
+.cg-ghost {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--cg-muted);
+    font: inherit;
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+.cg-shade {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.cg-shade[hidden] {
+    display: none;
+}
+
+.cg-chooser {
+    z-index: 5;
+}
+
+.cg-chooser-now {
+    margin: 0.15rem 0 0;
+    color: var(--cg-muted);
+    font: 400 0.75rem var(--cg-mono);
+}
+
+/* what's on the sheet now */
+.cg-chip-current {
+    border-style: dashed;
+}
+
+.cg-typed-status {
+    min-height: 1.2em;
+    margin: 0.35rem 0 0;
+    font: 400 0.8rem var(--cg-mono);
+}
+
+.cg-typed-status.cg-ok {
+    color: var(--cg-accent);
+}
+
+.cg-typed-status.cg-bad {
+    color: #ff6b6b;
+}
+
+.cg-chooser-foot .cg-btn:disabled {
+    opacity: 0.35;
 }
