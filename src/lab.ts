@@ -80,7 +80,7 @@ keyPick.add(new Option('NO KEY', ''));
 for (const m of [false, true])
     for (let i = 0; i < 12; i++) {
         const k = shiftKey(m ? 'Cm' : 'C', i);
-        keyPick.add(new Option(`KEY ${k}`, k));
+        keyPick.add(new Option(`${k}`, k));
     }
 keyPick.addEventListener('change', () => {
     take.key = keyPick.value || undefined;
