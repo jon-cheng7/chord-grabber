@@ -1469,6 +1469,16 @@ body:has(.cg-has-stepbar) .cg-toast {
     color: var(--cg-fg);
     font: 16px/1.45 var(--cg-mono);
     resize: none;
+    overscroll-behavior: contain;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+}
+
+html.cg-locked,
+html.cg-locked body {
+    overflow: hidden;
+    overscroll-behavior: none;
 }
 
 .cg-editor-text:focus {

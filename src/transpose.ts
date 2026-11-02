@@ -1,6 +1,6 @@
 // Chords and keys moved up or down by semitones
 
-import { isChord, parseChord } from './chord.ts';
+import { isChord, optional, parseChord } from './chord.ts';
 import type { Line, Piece } from './parse.ts';
 
 const SHARPS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -77,6 +77,10 @@ export function keyDistance(from: string, to: string): number {
     return d > 6 ? d - 12 : d;
 }
 
+/** an optional chord stays in its brackets */
+const keep = (name: string, out: string): string =>
+    optional(name) ? `(${out})` : out;
+
 export function transposeChord(
     name: string,
     n: number,
@@ -87,7 +91,7 @@ export function transposeChord(
     const names = flats ? FLATS : SHARPS;
     const note = (root: string): string => names[mod(pitch(root) + n)] ?? root;
     const bass = chord.bass ? `/${note(chord.bass)}` : '';
-    return `${note(chord.root)}${chord.quality}${bass}`;
+    return keep(name, `${note(chord.root)}${chord.quality}${bass}`);
 }
 
 /** sharps or flats, from the key the chords end up in */
@@ -136,7 +140,7 @@ export function simplifyChord(name: string): string {
     if (!chord) return name;
     const q = chord.quality;
     const kind = /^(?:dim|°)/.test(q) ? 'dim' : minor(q) ? 'm' : '';
-    return `${chord.root}${kind}`;
+    return keep(name, `${chord.root}${kind}`);
 }
 
 export function simplifyLines(lines: readonly Line[]): readonly Line[] {
@@ -176,7 +180,8 @@ export function numberChord(name: string, key: string): string {
     const numeral = NUMERALS[step(chord.root)] ?? '?';
     // the bass as a scale step, like figured bass
     const bass = chord.bass ? `/${DEGREES[step(chord.bass)] ?? '?'}` : '';
-    return `${low ? numeral.toLowerCase() : numeral}${quality}${bass}`;
+    const shown = `${low ? numeral.toLowerCase() : numeral}${quality}${bass}`;
+    return keep(name, shown);
 }
 
 export function numberLines(

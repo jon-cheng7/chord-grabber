@@ -66,6 +66,13 @@ function button(
     return node;
 }
 
+let shut: (() => void) | null = null;
+
+/** leaving the song: no editor left over the next page */
+export function closeEditor(): void {
+    shut?.();
+}
+
 export function openEditor(o: {
     text: string;
     save: (text: string) => void;
@@ -73,7 +80,11 @@ export function openEditor(o: {
     const box = el('div', 'cg-editor');
     box.setAttribute('role', 'dialog');
     box.setAttribute('aria-label', 'Edit lyrics and chords');
-    const close = (): void => popOut(box, () => box.remove());
+    const close = (): void => {
+        shut = null;
+        document.documentElement.classList.remove('cg-locked');
+        popOut(box, () => box.remove());
+    };
 
     const area = el('textarea', 'cg-editor-text');
     area.value = o.text;
@@ -106,6 +117,9 @@ export function openEditor(o: {
         'Chords go on the line above their words. Section names in [brackets]. Written in the original key.',
     );
     box.append(head, help, area);
+    // the song behind mustn't scroll while selection handles are dragged
+    document.documentElement.classList.add('cg-locked');
+    shut = close;
     document.body.append(box);
     popIn(box);
     area.focus({ preventScroll: true });

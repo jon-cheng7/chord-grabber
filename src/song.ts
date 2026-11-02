@@ -3,7 +3,7 @@
 import { popIn, popOut, slideClosed, slideOpen } from './animate.ts';
 import { holdChord, playChords, resetVoicing, stopHeld } from './audio.ts';
 import { findSections } from './arrange.ts';
-import { openEditor, sheetText } from './editor.ts';
+import { closeEditor, openEditor, sheetText } from './editor.ts';
 import { closeArranger, openArranger } from './arranger.ts';
 import { closeChooser, openChooser } from './chooser.ts';
 import { exportSong } from './files.ts';
@@ -620,15 +620,16 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         else if (x < 0.25) goTo(pageIndex - 1);
     });
     const keys = (e: KeyboardEvent): void => {
+        // a text field keeps its own keys: backspace, space, undo
+        if ((e.target as Element | null)?.closest('input, textarea')) return;
         const mod = e.metaKey || e.ctrlKey;
-        const typing = (e.target as Element | null)?.closest('input, textarea');
-        if (mod && !typing && e.key.toLowerCase() === 'z') {
+        if (mod && e.key.toLowerCase() === 'z') {
             e.preventDefault();
             if (e.shiftKey) redo();
             else undo();
             return;
         }
-        if (mod && !typing && e.key.toLowerCase() === 'y') {
+        if (mod && e.key.toLowerCase() === 'y') {
             e.preventDefault();
             redo();
             return;
@@ -658,6 +659,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     addEventListener('scroll', pin, { passive: true });
     leaveSong = () => {
         closeArranger();
+        closeEditor();
         stopHeld();
         app.classList.remove('cg-has-stepbar');
         stepBar.remove();
@@ -1030,7 +1032,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const toastUndo = (text: string): void =>
         toast(text, { label: 'UNDO', run: undo });
 
-    const editSheet = (): void =>
+    const editSheet = (): void => {
+        if (stepping) stopStep();
+        closeChooser();
         openEditor({
             text: sheetText(lines),
             save: (text) => {
@@ -1051,6 +1055,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                 toastUndo('Lyrics saved');
             },
         });
+    };
 
     let link = '';
     const relink = (): void => {
