@@ -9,8 +9,10 @@ function el(tag: string, className: string, text?: string): HTMLElement {
     return node;
 }
 
-function piece(p: Piece): HTMLElement {
+/** at: line:piece, so reharm can find a chord's place */
+function piece(p: Piece, at: string): HTMLElement {
     const node = el('span', 'cg-piece');
+    node.dataset.at = at;
     // empty chord keeps the row height so lyrics line up
     node.append(
         el('span', 'cg-chord', p.chord ?? ''),
@@ -22,7 +24,7 @@ function piece(p: Piece): HTMLElement {
 
 export function renderSheet(lines: readonly Line[]): DocumentFragment {
     const out = document.createDocumentFragment();
-    for (const line of lines) {
+    lines.forEach((line, i) => {
         switch (line.kind) {
             case 'section':
                 out.append(el('h2', 'cg-section', line.label));
@@ -35,13 +37,13 @@ export function renderSheet(lines: readonly Line[]): DocumentFragment {
                 break;
             case 'chords': {
                 const row = el('div', 'cg-line cg-line-chords');
-                for (const item of line.items) {
-                    row.append(
-                        item.chord
-                            ? el('span', 'cg-chord', item.chord)
-                            : el('span', 'cg-filler', item.text),
-                    );
-                }
+                line.items.forEach((item, k) => {
+                    const node = item.chord
+                        ? el('span', 'cg-chord', item.chord)
+                        : el('span', 'cg-filler', item.text);
+                    if (item.chord) node.dataset.at = `${i}:${k}`;
+                    row.append(node);
+                });
                 out.append(row);
                 break;
             }
@@ -50,12 +52,13 @@ export function renderSheet(lines: readonly Line[]): DocumentFragment {
                     'div',
                     line.chords ? 'cg-line cg-line-paired' : 'cg-line',
                 );
+                let k = 0;
                 for (const unit of line.units) {
                     const group = el('span', 'cg-unit');
                     for (const p of unit)
                         group.append(
                             line.chords
-                                ? piece(p)
+                                ? piece(p, `${i}:${k++}`)
                                 : document.createTextNode(p.text),
                         );
                     row.append(group);
@@ -64,6 +67,6 @@ export function renderSheet(lines: readonly Line[]): DocumentFragment {
                 break;
             }
         }
-    }
+    });
     return out;
 }

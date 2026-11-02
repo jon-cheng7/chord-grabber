@@ -1,12 +1,24 @@
 // Song view: the sheet, key, and the song menu
 
 import { popIn, popOut, slideClosed, slideOpen } from './animate.ts';
+import { playChords } from './audio.ts';
+import { closeChooser, openChooser } from './chooser.ts';
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
+import {
+    applyEdits,
+    chordAt,
+    passingGaps,
+    spots,
+    suggestFor,
+    type Edit,
+    type OptionGroup,
+} from './reharm.ts';
 import { renderSheet } from './render.ts';
 import { makeLink, sendLink } from './share.ts';
 import {
     pref,
+    setEdits,
     setPref,
     setShift,
     setTextSize,
@@ -18,6 +30,7 @@ import {
     keyDistance,
     shiftKey,
     simplifyLines,
+    transposeChord,
     transposeLines,
     usesFlats,
 } from './transpose.ts';
@@ -98,11 +111,22 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     let shift = s.shift ?? 0;
     let simple = pref<boolean>('cg-simple', false);
     let view = pref<View>('cg-view', 'scroll');
+    let reharm = pref<boolean>('cg-reharm', false);
+    let edits: Edit[] = s.edits ?? [];
+    // edits are kept in the written key, so transposing moves them too
+    const writtenFlats = written ? usesFlats(written, 0) : false;
+    const edited = (): readonly Line[] => applyEdits(lines, edits);
+    const flatsNow = (): boolean =>
+        written ? usesFlats(written, shift) : false;
+    const show = (name: string): string =>
+        transposeChord(name, shift, flatsNow());
+    const store = (name: string): string =>
+        transposeChord(name, -shift, writtenFlats);
 
     const shown = (): readonly Line[] => {
-        const flats = written ? usesFlats(written, shift) : false;
-        const moved = transposeLines(lines, shift, flats);
-        return simple ? simplifyLines(moved) : moved;
+        const moved = transposeLines(edited(), shift, flatsNow());
+        // reharm shows the chords as they are, to edit them
+        return simple && !reharm ? simplifyLines(moved) : moved;
     };
     const keyLabel = (): string => {
         const sign = shift > 0 ? '+' : '−';
@@ -170,6 +194,26 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                         simple = !simple;
                         setPref('cg-simple', simple);
                         draw();
+                    },
+                },
+                {
+                    label: 'Reharm mode',
+                    on: () => reharm,
+                    pick: () => {
+                        reharm = !reharm;
+                        setPref('cg-reharm', reharm);
+                        draw();
+                    },
+                },
+                {
+                    label: 'Clear reharm',
+                    pick: () => {
+                        if (!edits.length) {
+                            toast('Nothing to clear');
+                            return;
+                        }
+                        saveEdits([]);
+                        toast('Back to the original');
                     },
                 },
             ],
@@ -315,6 +359,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             goTo(pageIndex + (dx < 0 ? 1 : -1));
     });
     sheet.addEventListener('click', (e) => {
+        if (reharm && tapReharm(e.target as Element)) return;
         if (view !== 'pages') return;
         // edge taps turn the page too
         const x = e.clientX / innerWidth;
@@ -334,21 +379,127 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     addEventListener('keydown', keys);
     addEventListener('resize', resize);
     leaveSong = () => {
+        closeChooser();
         removeEventListener('keydown', keys);
         removeEventListener('resize', resize);
     };
 
     const draw = (): void => {
         sheet.replaceChildren(renderSheet(shown()));
+        if (reharm) decorate();
         keyText.textContent = keyLabel();
         fillPicker();
         if (view === 'pages') layout();
     };
+    // reharm: tappable chords, edits marked, passing-chord gaps
+    const saveEdits = (next: Edit[]): void => {
+        edits = next;
+        setEdits(s.id, edits);
+        draw();
+        relink();
+    };
+    const setAt = (line: number, piece: number, chord: string | null) => {
+        const original = chordAt(lines, line, piece);
+        const rest = edits.filter((e) => e.line !== line || e.piece !== piece);
+        // back to the sheet's own chord: no edit needed
+        if (chord === original) saveEdits(rest);
+        else
+            saveEdits([
+                ...rest,
+                original === null
+                    ? { line, piece, chord, added: true }
+                    : { line, piece, chord },
+            ]);
+    };
+    const neighbours = (line: number, piece: number): string[] => {
+        const all = spots(edited());
+        const earlier = (x: { line: number; piece: number }): boolean =>
+            x.line < line || (x.line === line && x.piece < piece);
+        const before = all.filter(earlier).pop();
+        const after = all.find(
+            (x) => !earlier(x) && (x.line !== line || x.piece !== piece),
+        );
+        return [before?.chord, after?.chord]
+            .filter((c): c is string => !!c)
+            .map(show);
+    };
+    const showGroups = (groups: OptionGroup[]): OptionGroup[] =>
+        groups.map((g) => ({
+            ...g,
+            options: g.options.map((o) => ({ ...o, chord: show(o.chord) })),
+        }));
+    let gaps: ReturnType<typeof passingGaps> = [];
+    const decorate = (): void => {
+        sheet.classList.add('cg-reharm');
+        for (const e of edits) {
+            const node = sheet.querySelector(`[data-at="${e.line}:${e.piece}"]`);
+            const chord = node?.classList.contains('cg-chord')
+                ? node
+                : node?.querySelector('.cg-chord');
+            chord?.classList.add(e.added ? 'cg-chord-added' : 'cg-chord-edited');
+        }
+        gaps = passingGaps(edited(), written, writtenFlats);
+        for (const g of gaps) {
+            const slot = sheet.querySelector(
+                `[data-at="${g.line}:${g.piece}"] .cg-chord`,
+            );
+            if (!slot || slot.textContent) continue;
+            const plus = el('button', 'cg-gap', '+');
+            plus.type = 'button';
+            plus.dataset.gap = `${g.line}:${g.piece}`;
+            plus.setAttribute('aria-label', `Passing chord into ${show(g.to)}`);
+            slot.append(plus);
+        }
+    };
+    const tapReharm = (target: Element): boolean => {
+        const plus = target.closest<HTMLElement>('.cg-gap');
+        if (plus) {
+            const [line = 0, piece = 0] = (plus.dataset.gap ?? '')
+                .split(':')
+                .map(Number);
+            const g = gaps.find((x) => x.line === line && x.piece === piece);
+            if (!g) return true;
+            openChooser({
+                title: `Passing chord: ${show(g.from)} → ${show(g.to)}`,
+                current: null,
+                groups: showGroups([{ label: 'TRY', options: g.options }]),
+                hear: (c) => playChords([show(g.from), c, show(g.to)]),
+                choose: (c) => setAt(line, piece, store(c)),
+            });
+            return true;
+        }
+        const node = target
+            .closest('.cg-chord')
+            ?.closest<HTMLElement>('[data-at]');
+        if (!node) return false;
+        const [line = 0, piece = 0] = (node.dataset.at ?? '')
+            .split(':')
+            .map(Number);
+        const now = chordAt(edited(), line, piece);
+        if (!now) return false;
+        const original = chordAt(lines, line, piece);
+        const [before, after] = neighbours(line, piece);
+        openChooser({
+            title: `Replace ${show(now)}`,
+            current: show(now),
+            groups: showGroups(suggestFor(now, written, writtenFlats)),
+            hear: (c) =>
+                playChords([before, c, after].filter((x): x is string => !!x)),
+            choose: (c) => setAt(line, piece, store(c)),
+            revert:
+                original && original !== now
+                    ? () => setAt(line, piece, original)
+                    : undefined,
+            remove: () => setAt(line, piece, null),
+        });
+        return true;
+    };
+
     let link = '';
     const relink = (): void => {
         link = '';
         const at = shift;
-        void makeLink(s, at).then((made) => {
+        void makeLink(s, at, edits).then((made) => {
             if (at === shift) link = made;
         });
     };

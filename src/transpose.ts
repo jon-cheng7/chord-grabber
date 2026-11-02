@@ -45,18 +45,22 @@ const STEPS: Record<string, number> = {
     B: 11,
 };
 
-const mod = (n: number): number => ((n % 12) + 12) % 12;
+export const mod = (n: number): number => ((n % 12) + 12) % 12;
 
-function pitch(note: string): number {
+export function pitch(note: string): number {
     let p = STEPS[note[0] ?? ''] ?? 0;
     for (const ch of note.slice(1)) p += ch === '#' || ch === '♯' ? 1 : -1;
     return mod(p);
 }
 
-const minor = (quality: string): boolean =>
+export const minor = (quality: string): boolean =>
     /^(?:m(?!aj)|min|-)/.test(quality);
 
 /** 'G' up 2 → 'A', 'Em' up 1 → 'Fm' */
+export function noteName(p: number, flats: boolean): string {
+    return (flats ? FLATS : SHARPS)[mod(p)] ?? 'C';
+}
+
 export function shiftKey(key: string, n: number): string {
     const chord = parseChord(key);
     if (!chord) return key;

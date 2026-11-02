@@ -1,5 +1,6 @@
 // Saved songs and settings, this device only
 
+import type { Edit } from './reharm.ts';
 import type { SongSource } from './ug.ts';
 
 export interface Saved extends SongSource {
@@ -7,6 +8,8 @@ export interface Saved extends SongSource {
     added: number;
     /** semitones the reader moved it */
     shift?: number;
+    /** reharm changes, in the key the sheet is written in */
+    edits?: Edit[];
 }
 
 const SONGS = 'cg-songs';
@@ -49,8 +52,14 @@ export function song(id: string): Saved | null {
 
 export function save(source: SongSource): Saved {
     const id = idFor(source);
-    const shift = song(id)?.shift;
-    const saved: Saved = { ...source, id, added: Date.now(), shift };
+    const old = song(id);
+    const saved: Saved = {
+        ...source,
+        id,
+        added: Date.now(),
+        shift: old?.shift,
+        edits: old?.edits,
+    };
     const rest = songs().filter((s) => s.id !== id);
     write(SONGS, [saved, ...rest].slice(0, MAX_SONGS));
     return saved;
@@ -60,6 +69,13 @@ export function setShift(id: string, shift: number): void {
     write(
         SONGS,
         songs().map((s) => (s.id === id ? { ...s, shift } : s)),
+    );
+}
+
+export function setEdits(id: string, edits: Edit[]): void {
+    write(
+        SONGS,
+        songs().map((s) => (s.id === id ? { ...s, edits } : s)),
     );
 }
 

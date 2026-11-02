@@ -11,7 +11,14 @@ import {
 import { parseSheet } from './parse.ts';
 import { readShared } from './share.ts';
 import { leave, renderSong } from './song.ts';
-import { markConnected, save, setShift, song, type Saved } from './store.ts';
+import {
+    markConnected,
+    save,
+    setEdits,
+    setShift,
+    song,
+    type Saved,
+} from './store.ts';
 import { extractSong, looksLikeHtml } from './extract.ts';
 import { readUltimateGuitar, type SongSource } from './ug.ts';
 
@@ -125,8 +132,9 @@ function route(): void {
             }
             const saved = save(got.source);
             setShift(saved.id, got.shift);
+            setEdits(saved.id, got.edits);
             history.replaceState(null, '', `#song=${saved.id}`);
-            showSong({ ...saved, shift: got.shift });
+            showSong({ ...saved, shift: got.shift, edits: got.edits });
         });
         return;
     }

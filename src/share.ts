@@ -1,10 +1,12 @@
 // Share links: the whole song, squeezed into the link's hash
 
+import type { Edit } from './reharm.ts';
 import type { SongSource } from './ug.ts';
 
 export interface Shared {
     source: SongSource;
     shift: number;
+    edits: Edit[];
 }
 
 async function squeeze(text: string): Promise<string> {
@@ -27,10 +29,14 @@ async function unsqueeze(data: string): Promise<string> {
 }
 
 /** built ahead of time: the share sheet only opens straight from a tap */
-export async function makeLink(song: SongSource, shift: number): Promise<string> {
+export async function makeLink(
+    song: SongSource,
+    shift: number,
+    edits: readonly Edit[],
+): Promise<string> {
     const { title, artist, key, capo, sheet, url } = song;
     const data = await squeeze(
-        JSON.stringify({ title, artist, key, capo, sheet, url, shift }),
+        JSON.stringify({ title, artist, key, capo, sheet, url, shift, edits }),
     );
     return `${location.origin}${location.pathname}#s=${data}`;
 }
@@ -81,7 +87,7 @@ export async function sendLink(
 export async function readShared(data: string): Promise<Shared | null> {
     try {
         const o = JSON.parse(await unsqueeze(data)) as Partial<
-            SongSource & { shift: number }
+            SongSource & { shift: number; edits: Edit[] }
         >;
         if (typeof o.sheet !== 'string') return null;
         return {
@@ -94,6 +100,7 @@ export async function readShared(data: string): Promise<Shared | null> {
                 url: typeof o.url === 'string' ? o.url : null,
             },
             shift: typeof o.shift === 'number' ? o.shift : 0,
+            edits: Array.isArray(o.edits) ? o.edits : [],
         };
     } catch {
         return null;
