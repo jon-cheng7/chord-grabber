@@ -151,66 +151,97 @@ export function openArranger(o: ArrangerOptions): void {
         sync();
     };
 
-    // drag by the handle; the others slide out of the way
+    // drag by the handle. Nothing moves in the DOM until the drop: the row
+    // follows the finger, the others slide a slot to make room
+    let body: HTMLElement;
     const drag = (li: HTMLLIElement, handle: HTMLElement): void => {
         handle.addEventListener('pointerdown', (e) => {
+            if (e.button > 0) return;
             e.preventDefault();
+            const rows = [...list.children] as HTMLElement[];
+            const from = rows.indexOf(li);
+            if (from < 0) return;
             handle.setPointerCapture(e.pointerId);
-            li.classList.add('cg-dragging');
+            const tops = rows.map((r) => r.offsetTop);
+            const slot =
+                rows.length > 1
+                    ? (tops[1] ?? 0) - (tops[0] ?? 0)
+                    : li.offsetHeight;
+            const startY = e.clientY;
+            const startScroll = body.scrollTop;
+            let to = from;
             let lastY = e.clientY;
-            let offset = 0;
-            const moveTo = (y: number): void => {
-                offset += y - lastY;
-                lastY = y;
-                li.style.transform = `translateY(${offset}px)`;
-                const mid = li.getBoundingClientRect().top + li.offsetHeight / 2;
-                const prev = li.previousElementSibling as HTMLElement | null;
-                const next = li.nextElementSibling as HTMLElement | null;
-                const swap = (other: HTMLElement, after: boolean): void => {
-                    const before = li.getBoundingClientRect().top - offset;
-                    flip(
-                        list,
-                        () =>
-                            after
-                                ? other.after(li)
-                                : other.before(li),
-                        li,
-                    );
-                    // keep the row under the finger after it moved in the list
-                    const now = li.getBoundingClientRect().top - offset;
-                    offset -= now - before;
-                    li.style.transform = `translateY(${offset}px)`;
-                };
-                if (prev) {
-                    const r = prev.getBoundingClientRect();
-                    if (mid < r.top + r.height / 2) swap(prev, false);
-                }
-                if (next) {
-                    const r = next.getBoundingClientRect();
-                    if (mid > r.top + r.height / 2) swap(next, true);
-                }
-                // near the panel's edges, scroll it
-                const area = body.getBoundingClientRect();
-                if (y < area.top + 40) body.scrollTop -= 8;
-                else if (y > area.bottom - 40) body.scrollTop += 8;
+            li.classList.add('cg-dragging');
+            list.classList.add('cg-sorting');
+
+            const place = (): void => {
+                const dy = lastY - startY + body.scrollTop - startScroll;
+                const min = -from * slot;
+                const max = (rows.length - 1 - from) * slot;
+                const y = Math.min(max, Math.max(min, dy));
+                li.style.transform = `translateY(${y}px)`;
+                to = Math.round(from + y / slot);
+                rows.forEach((r, i) => {
+                    if (r === li) return;
+                    let shift = 0;
+                    if (from < to && i > from && i <= to) shift = -slot;
+                    if (from > to && i < from && i >= to) shift = slot;
+                    r.style.transform = shift ? `translateY(${shift}px)` : '';
+                });
             };
-            const move = (ev: PointerEvent): void => moveTo(ev.clientY);
+            // near the panel's edges, keep scrolling while held
+            let timer = 0;
+            const edge = (): void => {
+                const area = body.getBoundingClientRect();
+                const speed =
+                    lastY < area.top + 48
+                        ? -6
+                        : lastY > area.bottom - 48
+                          ? 6
+                          : 0;
+                if (speed) {
+                    body.scrollTop += speed;
+                    place();
+                }
+                timer = requestAnimationFrame(edge);
+            };
+            timer = requestAnimationFrame(edge);
+
+            const move = (ev: PointerEvent): void => {
+                lastY = ev.clientY;
+                place();
+            };
             const end = (): void => {
+                cancelAnimationFrame(timer);
                 handle.removeEventListener('pointermove', move);
-                li.animate(
+                handle.removeEventListener('pointerup', end);
+                handle.removeEventListener('pointercancel', end);
+                const settle = (): void => {
+                    // reorder for real, then drop the offsets without a jump
+                    list.classList.remove('cg-sorting');
+                    for (const r of rows) r.style.transform = '';
+                    const target = rows[to];
+                    if (to !== from && target)
+                        if (to > from) target.after(li);
+                        else target.before(li);
+                    li.classList.remove('cg-dragging');
+                    sync();
+                };
+                const y = (to - from) * slot;
+                const run = li.animate(
                     [
-                        { transform: `translateY(${offset}px)` },
-                        { transform: 'none' },
+                        { transform: li.style.transform || 'none' },
+                        { transform: `translateY(${y}px)` },
                     ],
                     { duration: MS, easing: EASE },
                 );
-                li.style.transform = '';
-                li.classList.remove('cg-dragging');
-                sync();
+                li.style.transform = `translateY(${y}px)`;
+                run.addEventListener('finish', settle);
+                run.addEventListener('cancel', settle);
             };
             handle.addEventListener('pointermove', move);
-            handle.addEventListener('pointerup', end, { once: true });
-            handle.addEventListener('pointercancel', end, { once: true });
+            handle.addEventListener('pointerup', end);
+            handle.addEventListener('pointercancel', end);
         });
     };
 
@@ -233,7 +264,7 @@ export function openArranger(o: ArrangerOptions): void {
     foot.append(reset, done);
 
     // head and buttons stay put; only the middle scrolls
-    const body = el('div', 'cg-chooser-list');
+    body = el('div', 'cg-chooser-list');
     body.append(
         el('p', 'cg-pop-label', 'SECTIONS · TAP TO ADD'),
         chips,

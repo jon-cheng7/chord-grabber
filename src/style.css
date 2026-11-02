@@ -1433,3 +1433,12 @@ body {
     border-color: var(--cg-accent);
     outline: none;
 }
+
+/* while sorting, the other rows glide a slot up or down */
+.cg-sorting .cg-arrange-row:not(.cg-dragging) {
+    transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.cg-sorting {
+    user-select: none;
+}
