@@ -16,6 +16,7 @@ import { closeArranger, openArranger } from './arranger.ts';
 import { closeChooser, openChooser } from './chooser.ts';
 import { exportSong } from './files.ts';
 import { analyze, fromSong, styled, type Harmony } from './harmony.ts';
+import { followUps, reaches, type Change } from './moves.ts';
 import { songKey } from './key.ts';
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
@@ -756,26 +757,48 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         relink();
     };
     /** row:piece as drawn; the edit belongs to that time round the section */
-    const setAt = (row: number, piece: number, chord: string | null) => {
-        const v = current();
+    /** edits with one more chord set at row:piece, for this time round */
+    const withAt = (
+        list: Edit[],
+        v: SheetView,
+        at: { row: number; piece: number; chord: string | null },
+    ): Edit[] => {
+        const { row, piece, chord } = at;
         const line = v.origin[row] ?? -1;
-        if (line < 0) return;
+        if (line < 0) return list;
         const occ = v.occ[row] ?? 0;
         const original = chordAt(v.raw, row, piece);
         const here = (e: Edit): boolean =>
             e.line === line && e.piece === piece;
-        const rest = edits.filter((e) => !(here(e) && e.occ === occ));
+        const rest = list.filter((e) => !(here(e) && e.occ === occ));
         const everyTime = rest.some((e) => here(e) && e.occ === undefined);
         // back to the sheet's own chord: no edit needed
-        if (chord === original && !everyTime) saveEdits(rest);
-        else
-            saveEdits([
-                ...rest,
-                original === null
-                    ? { line, piece, chord, occ, added: true }
-                    : { line, piece, chord, occ },
-            ]);
+        if (chord === original && !everyTime) return rest;
+        return [
+            ...rest,
+            original === null
+                ? { line, piece, chord, occ, added: true }
+                : { line, piece, chord, occ },
+        ];
     };
+    const setAt = (row: number, piece: number, chord: string | null) =>
+        saveEdits(withAt(edits, current(), { row, piece, chord }));
+    /** a pick and the chords that follow it: one change, one undo */
+    const setMany = (changes: Change[]): void => {
+        const v = current();
+        saveEdits(
+            changes.reduce((list, c) => withAt(list, v, c), edits),
+            'Reharm move',
+        );
+    };
+    /** chords you set yourself: follow-ups leave them alone */
+    const locked = (v: SheetView) => (row: number, piece: number) =>
+        edits.some(
+            (e) =>
+                e.line === v.origin[row] &&
+                e.piece === piece &&
+                (e.occ === undefined || e.occ === v.occ[row]),
+        );
     const neighbours = (
         row: number,
         piece: number,
@@ -952,6 +975,29 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             hear: around.hear,
             compare: () => around.asIs(show(now)),
             choose: (c) => setAt(row, piece, store(c)),
+            follow: (c) => {
+                const chord = store(c);
+                if (pass || !here) return [];
+                const i = h.readings.indexOf(here);
+                const next = h.readings[i + 1];
+                const after = next?.block === here.block ? next.chord : null;
+                if (!reaches(source, chord, here, after)) return [];
+                return followUps(
+                    h,
+                    here,
+                    chord,
+                    locked(v),
+                    writtenFlats,
+                    h.profile,
+                    show,
+                ).map((w) => ({
+                    label: w.name,
+                    why: w.why,
+                    chords: w.window.map(show).join(' → '),
+                    hear: () => playChords(w.window.map((x) => sound(show(x)))),
+                    apply: () => setMany([{ row, piece, chord }, ...w.changes]),
+                }));
+            },
             revert:
                 original && original !== now
                     ? () => setAt(row, piece, original)

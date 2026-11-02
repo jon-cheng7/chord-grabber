@@ -1855,3 +1855,36 @@ html.cg-locked body {
 .cg-lib-sheet .cg-chooser-foot .cg-btn {
     padding: 0 0.75rem;
 }
+
+/* a bigger pick: keep the rest, or let the chords around it follow */
+.cg-follow {
+    flex: none;
+    margin: 0 calc(-1 * var(--cg-pad));
+    padding: 0.2rem var(--cg-pad) 0.7rem;
+    border-bottom: 1px solid var(--cg-line);
+}
+
+.cg-follow[hidden] {
+    display: none;
+}
+
+.cg-ways {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.cg-way {
+    flex: none;
+    max-width: 13rem;
+}
+
+.cg-way .cg-chip-name {
+    font-size: 0.85rem;
+}
+
+.cg-way-chords {
+    color: var(--cg-fg);
+    font: 600 0.75rem var(--cg-mono);
+    white-space: nowrap;
+}

@@ -58,7 +58,7 @@ export interface Harmony {
     keyAt(row: number): string | null;
 }
 
-type Kind = '' | 'm' | 'dim';
+export type Kind = '' | 'm' | 'dim';
 
 // scale step → its triad and what it usually does
 const MAJOR: Record<number, [Kind, Role]> = {
@@ -105,8 +105,9 @@ function kindOf(quality: string): Kind {
     return minor(quality) ? 'm' : '';
 }
 
-const tonicOf = (key: string): number => pitch(parseChord(key)?.root ?? 'C');
-const isMinorKey = (key: string): boolean =>
+export const tonicOf = (key: string): number =>
+    pitch(parseChord(key)?.root ?? 'C');
+export const isMinorKey = (key: string): boolean =>
     minor(parseChord(key)?.quality ?? '');
 
 /** the key each block plays in: the song's, unless the block clearly sits elsewhere */
@@ -131,6 +132,54 @@ function loops(seq: string[]): boolean {
         if (same / seq.length >= LOOP_SHARE) return true;
     }
     return false;
+}
+
+export interface Class {
+    numeral: string;
+    role: Role;
+    diatonic: boolean;
+    /** semitones above the key's home note */
+    step: number;
+    kind: Kind;
+}
+
+/** one chord in a key; next decides whether it's a secondary dominant */
+export function classify(
+    chord: string,
+    key: string,
+    next: string | null,
+): Class {
+    const c = parseChord(chord);
+    if (!c)
+        return {
+            numeral: '',
+            role: 'colour',
+            diatonic: false,
+            step: 0,
+            kind: '',
+        };
+    const minorKey = isMinorKey(key);
+    const step = mod(pitch(c.root) - tonicOf(key));
+    const kind = kindOf(c.quality);
+    const scale = (minorKey ? MINOR : MAJOR)[step];
+    // the raised fifth of a minor key counts as its own
+    const raised = minorKey && step === 7 && kind === '';
+    const diatonic = scale?.[0] === kind || raised;
+    let role: Role = diatonic ? (scale?.[1] ?? 'colour') : 'colour';
+    let numeral = numberChord(chord, key);
+    if (!diatonic) {
+        const n = next ? parseChord(next) : null;
+        const borrowed = minorKey
+            ? undefined
+            : BORROWED_MAJOR[`${step}${kind}`];
+        if (n && kind === '' && mod(pitch(c.root) + 5) === pitch(n.root)) {
+            // a major chord a fifth above the next one: a secondary dominant
+            role = 'dominant';
+            const seventh = /7/.test(c.quality) ? '7' : '';
+            numeral = `V${seventh}/${numberChord(simplifyChord(next!), key)}`;
+        } else if (borrowed) role = borrowed;
+    }
+    return { numeral, role, diatonic, step, kind };
 }
 
 export function analyze(view: View, songKey: string | null): Harmony {
@@ -199,34 +248,12 @@ export function analyze(view: View, songKey: string | null): Harmony {
         const seq = found.map((f) => simplifyChord(f.chord));
         if (loops(seq)) loopBlocks++;
 
-        const tonic = tonicOf(key);
-        const minorKey = isMinorKey(key);
-        const table = minorKey ? MINOR : MAJOR;
         found.forEach((f, i) => {
-            const c = parseChord(f.chord)!;
-            const step = mod(pitch(c.root) - tonic);
-            const kind = kindOf(c.quality);
-            const scale = table[step];
-            // the raised fifth of a minor key counts as its own
-            const raised = minorKey && step === 7 && kind === '';
-            const diatonic = scale?.[0] === kind || raised;
-            let role: Role = diatonic ? (scale?.[1] ?? 'colour') : 'colour';
-            let numeral = numberChord(f.chord, key);
-            const next = found[i + 1];
-            if (!diatonic) {
-                const nextRoot = next
-                    ? pitch(parseChord(next.chord)!.root)
-                    : -1;
-                const borrowed = minorKey
-                    ? undefined
-                    : BORROWED_MAJOR[`${step}${kind}`];
-                if (kind === '' && mod(pitch(c.root) + 5) === nextRoot) {
-                    // a major chord a fifth above the next one: a secondary dominant
-                    role = 'dominant';
-                    const seventh = /7/.test(c.quality) ? '7' : '';
-                    numeral = `V${seventh}/${numberChord(simplifyChord(next!.chord), key)}`;
-                } else if (borrowed) role = borrowed;
-            }
+            const { numeral, role, diatonic } = classify(
+                f.chord,
+                key,
+                found[i + 1]?.chord ?? null,
+            );
             readings.push({
                 ...f,
                 key,

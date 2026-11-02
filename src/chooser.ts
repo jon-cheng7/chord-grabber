@@ -1,8 +1,19 @@
 // Reharm chooser: try chords from the bottom sheet, DONE keeps one
 
-import { popIn, popOut } from './animate.ts';
+import { popIn, popOut, slideClosed } from './animate.ts';
 import { isChord } from './chord.ts';
 import type { OptionGroup } from './reharm.ts';
+
+/** a way for the chords around a pick to follow it */
+export interface FollowUp {
+    label: string;
+    why: string;
+    /** the chords around it, as shown */
+    chords: string;
+    hear: () => void;
+    /** the pick and its neighbours, as one change */
+    apply: () => void;
+}
 
 export interface ChooserOptions {
     title: string;
@@ -17,6 +28,8 @@ export interface ChooserOptions {
     compare?: () => void;
     /** only on DONE */
     choose: (chord: string) => void;
+    /** for a pick that changes what the chord does; empty for the rest */
+    follow?: (chord: string) => FollowUp[];
     /** back to what the sheet had */
     revert?: () => void;
     remove?: () => void;
@@ -84,19 +97,60 @@ export function openChooser(o: ChooserOptions): void {
     head.append(titles, button('×', closeChooser, 'cg-icon'));
     box.append(head);
 
+    let then: FollowUp | null = null;
     const done = button('DONE', () => {
-        if (picked && picked !== o.current) o.choose(picked);
+        if (picked && picked !== o.current) {
+            if (then) then.apply();
+            else o.choose(picked);
+        }
         closeChooser();
     }, 'cg-btn cg-btn-primary');
+
+    // a bigger pick: keep the rest as is, or let the chords around it follow
+    const follow = el('div', 'cg-follow');
+    follow.hidden = true;
+    let ways: [FollowUp | null, HTMLButtonElement][] = [];
+    const pickWay = (way: FollowUp | null): void => {
+        then = way;
+        for (const [w, b] of ways) b.classList.toggle('cg-on', w === way);
+        if (way) way.hear();
+        else if (picked) o.hear(picked);
+    };
+    const showFollow = (chord: string | null): void => {
+        const found = chord && o.follow ? o.follow(chord) : [];
+        if (!found.length) {
+            slideClosed(follow);
+            return;
+        }
+        const row = el('div', 'cg-chips cg-ways');
+        ways = [null, ...found].map((w) => {
+            const b = button('', () => pickWay(w), 'cg-chip cg-way');
+            b.append(el('span', 'cg-chip-name', w ? w.label : 'As is'));
+            if (w) b.append(el('span', 'cg-way-chords', w.chords));
+            const why = w ? w.why : 'only this chord changes';
+            b.append(el('span', 'cg-chip-why', why));
+            row.append(b);
+            return [w, b];
+        });
+        ways[0]![1].classList.add('cg-on');
+        follow.replaceChildren(
+            el('p', 'cg-pop-label', `MAKE ${chord} WORK`),
+            row,
+        );
+        if (follow.hidden) popIn(follow);
+    };
 
     const chips: HTMLButtonElement[] = [];
     const stage = (chord: string | null): void => {
         picked = chord;
+        then = null;
         for (const c of chips)
             c.classList.toggle('cg-on', c.dataset.chord === picked);
         done.disabled = !picked || picked === o.current;
+        showFollow(picked && picked !== o.current ? picked : null);
     };
 
+    box.append(follow);
     const list = el('div', 'cg-chooser-list');
     for (const g of o.groups) {
         list.append(el('p', 'cg-pop-label', g.label));
