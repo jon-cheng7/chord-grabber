@@ -165,6 +165,27 @@ const BLOCKED: Partial<Record<Browser, string>> = {
     safari: 'If nothing opens, go to Safari → Settings → Websites → Pop-up Windows and allow the chord site.',
 };
 
+/** the bar steps, the button to drag, and the copy fallback */
+function install(b: Browser): HTMLElement[] {
+    const mark = el('a', 'cg-bookmark', '♪ Chord Grabber');
+    mark.href = bookmarkletHref();
+    mark.draggable = true;
+    mark.addEventListener('click', (e) => {
+        // only useful once it's in the bookmarks bar
+        e.preventDefault();
+        mark.textContent = 'Drag me, don’t click me';
+        window.setTimeout(() => (mark.textContent = '♪ Chord Grabber'), 1800);
+    });
+    return [
+        steps([
+            [showBar(b), ''],
+            [`Drag this button onto the ${BAR[b]}:`, ''],
+        ]),
+        mark,
+        copyFallback(),
+    ];
+}
+
 function computer(): HTMLElement {
     const b = browser();
     const card = el('section', connected() ? 'cg-card' : 'cg-card cg-setup');
@@ -185,26 +206,7 @@ function computer(): HTMLElement {
                 'Songs reach this page through a bookmark you click on the chord site. It reads the song from that page and opens it here.',
             ),
         );
-        card.append(
-            steps([
-                [showBar(b), ''],
-                [`Drag this button onto the ${BAR[b]}:`, ''],
-            ]),
-        );
-        const mark = el('a', 'cg-bookmark', '♪ Chord Grabber');
-        mark.href = bookmarkletHref();
-        mark.draggable = true;
-        mark.addEventListener('click', (e) => {
-            // only useful once it's in the bookmarks bar
-            e.preventDefault();
-            mark.textContent = 'Drag me, don’t click me';
-            window.setTimeout(
-                () => (mark.textContent = '♪ Chord Grabber'),
-                1800,
-            );
-        });
-        card.append(mark);
-        card.append(copyFallback());
+        card.append(...install(b));
         card.append(el('h3', 'cg-label', 'THEN, EVERY TIME'));
     }
     card.append(
@@ -217,6 +219,19 @@ function computer(): HTMLElement {
             ],
         ]),
     );
+    if (connected()) {
+        const again = el('details', 'cg-fallback');
+        again.append(el('summary', 'cg-link', 'Lost the bookmark?'));
+        again.append(
+            el(
+                'p',
+                'cg-card-note',
+                'Delete the old one first if it’s still there. This one has the latest version.',
+            ),
+            ...install(b),
+        );
+        card.append(again);
+    }
     return card;
 }
 
