@@ -6,6 +6,7 @@ import { findSections } from './arrange.ts';
 import { openEditor, sheetText } from './editor.ts';
 import { closeArranger, openArranger } from './arranger.ts';
 import { closeChooser, openChooser } from './chooser.ts';
+import { songKey } from './key.ts';
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
 import {
@@ -38,9 +39,10 @@ import {
     type Saved,
 } from './store.ts';
 import {
-    firstChord,
     keyDistance,
     shiftKey,
+    numberChord,
+    numberLines,
     simplifyChord,
     simplifyLines,
     transposeChord,
@@ -73,6 +75,22 @@ function button(
     node.type = 'button';
     node.addEventListener('click', onClick);
     return node;
+}
+
+interface Snap {
+    why: string;
+    sheet: string;
+    shift: number;
+    edits: Edit[];
+    order: string[] | null;
+    at: number;
+}
+
+let kept: { id: string; past: Snap[]; future: Snap[] } | null = null;
+
+function history(id: string): { past: Snap[]; future: Snap[] } {
+    if (kept?.id !== id) kept = { id, past: [], future: [] };
+    return kept;
 }
 
 // screen stays on while a song is open
@@ -116,16 +134,16 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     app.style.setProperty('--cg-size', `${textSize()}px`);
 
     const lines = parseSheet(s.sheet);
-    // spelling follows the chords as written, not as heard
-    const written =
-        (s.key && s.capo ? shiftKey(s.key, -s.capo) : s.key) ??
-        firstChord(lines);
-    const home = s.key ?? written;
+    // the key as written, never as heard with a capo
+    const written = songKey(s.key, lines, s.capo);
     let shift = s.shift ?? 0;
     let simple = pref<boolean>('cg-simple', false);
+    let numbers = pref<boolean>('cg-numbers', false);
     let view = pref<View>('cg-view', 'scroll');
     let reharm = pref<boolean>('cg-reharm', false);
     let edits: Edit[] = s.edits ?? [];
+    // undo and redo outlive a redraw of this song, not a visit to another
+    const hist = history(s.id);
     // edits are kept in the written key, so transposing moves them too
     const writtenFlats = written ? usesFlats(written, 0) : false;
     const flatsNow = (): boolean =>
@@ -147,14 +165,24 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             order ?? sections.order,
             edits,
         );
+    // reharm shows the chords as they are, to edit them
+    const simpleNow = (): boolean => simple && !reharm;
+    const numbersNow = (): boolean => numbers && !reharm && written !== null;
     const display = (ls: readonly Line[]): readonly Line[] => {
         const moved = transposeLines(ls, shift, flatsNow());
-        // reharm shows the chords as they are, to edit them
-        return simple && !reharm ? simplifyLines(moved) : moved;
+        const plain = simpleNow() ? simplifyLines(moved) : moved;
+        return numbersNow() && written
+            ? numberLines(plain, shiftKey(written, shift))
+            : plain;
     };
     /** a chord name as it sounds now */
     const heard = (name: string): string =>
-        simple && !reharm ? simplifyChord(show(name)) : show(name);
+        simpleNow() ? simplifyChord(show(name)) : show(name);
+    /** how a chord is written on screen now: a name or a number */
+    const label = (name: string): string =>
+        numbersNow() && written
+            ? numberChord(heard(name), shiftKey(written, shift))
+            : heard(name);
     const shown = (): readonly Line[] => display(current().lines);
     /** a chord's place as drawn: row:piece */
     const shownAt = (target: Element): string | null =>
@@ -168,14 +196,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const keyLabel = (): string => {
         const sign = shift > 0 ? '+' : '−';
         const offset = shift ? ` ${sign}${Math.abs(shift)}` : '';
-        return [
-            s.key
-                ? `KEY ${shift ? shiftKey(s.key, shift) : s.key}${offset}`
-                : `KEY${offset || ' —'}`,
-            s.capo && `CAPO ${s.capo}`,
-        ]
-            .filter(Boolean)
-            .join(' · ');
+        return written
+            ? `KEY ${shift ? shiftKey(written, shift) : written}${offset}`
+            : `KEY${offset || ' —'}`;
     };
 
     // top bar: back, titles, share, menu
@@ -224,7 +247,13 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                 {
                     label: 'Print',
                     pick: () =>
-                        printSong(s, renderSheet(shown()), keyLabel()),
+                        // like playback: each section once, the order on top
+                        printSong(
+                            s,
+                            renderSheet(display(compact(current()).lines)),
+                            keyLabel(),
+                            arrangeable ? `ORDER  ${orderTags().join('  ')}` : '',
+                        ),
                 },
             ],
         },
@@ -239,6 +268,16 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                     pick: () => {
                         simple = !simple;
                         setPref('cg-simple', simple);
+                        draw();
+                    },
+                },
+                {
+                    label: 'Numbers (1 4 5)',
+                    on: () => numbers,
+                    pick: () => {
+                        numbers = !numbers;
+                        setPref('cg-numbers', numbers);
+                        if (numbers && !written) toast('No key to count from');
                         draw();
                     },
                 },
@@ -296,27 +335,53 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const clear = button(
         'CLEAR',
         () => {
-            saveEdits([]);
-            toast('Back to the original');
+            saveEdits([], 'Cleared reharm');
+            toastUndo('Reharm cleared');
         },
         'cg-tools-clear',
     );
-    tools.append(reharmBtn, hint, clear);
+    const undoBtn = button('', () => undo(), 'cg-icon cg-history');
+    undoBtn.innerHTML = UNDO_ICON;
+    undoBtn.setAttribute('aria-label', 'Undo');
+    const redoBtn = button('', () => redo(), 'cg-icon cg-history');
+    redoBtn.innerHTML = REDO_ICON;
+    redoBtn.setAttribute('aria-label', 'Redo');
+    const historyBox = el('div', 'cg-history-box');
+    historyBox.append(undoBtn, redoBtn);
+    tools.append(reharmBtn, hint, clear, historyBox);
+    const syncHistory = (): void => {
+        undoBtn.disabled = !hist.past.length;
+        redoBtn.disabled = !hist.future.length;
+        undoBtn.title = hist.past.length
+            ? `Undo ${hist.past[hist.past.length - 1]!.why.toLowerCase()}`
+            : 'Nothing to undo';
+        redoBtn.title = hist.future.length
+            ? `Redo ${hist.future[hist.future.length - 1]!.why.toLowerCase()}`
+            : 'Nothing to redo';
+        // out of the way until there's something to undo
+        historyBox.hidden = !hist.past.length && !hist.future.length;
+    };
 
     // the arrangement, always in view; tap to change it
     const orderBar = button('', () => openOrder(), 'cg-order');
     orderBar.setAttribute('aria-label', 'Arrange the song');
     orderBar.hidden = !arrangeable;
+    /** short names in order; * marks a time round that's been reharmed */
+    const orderTags = (): string[] => {
+        const blocks = current().blocks;
+        const first = new Map<string, string>();
+        for (const b of blocks) if (!first.has(b.id)) first.set(b.id, b.sig);
+        return blocks.map((b) => {
+            const short =
+                sections.library.find((x) => x.id === b.id)?.short ?? '?';
+            return first.get(b.id) === b.sig ? short : `${short}*`;
+        });
+    };
     const syncOrder = (playing = -1): void => {
-        const ids = order ?? sections.order;
         orderBar.replaceChildren(
             el('span', 'cg-order-label', order ? 'ARRANGED' : 'ORDER'),
-            ...ids.map((id, i) => {
-                const tag = el(
-                    'span',
-                    'cg-order-tag',
-                    sections.library.find((x) => x.id === id)?.short ?? '?',
-                );
+            ...orderTags().map((short, i) => {
+                const tag = el('span', 'cg-order-tag', short);
                 if (i === playing) tag.classList.add('cg-on');
                 return tag;
             }),
@@ -330,14 +395,31 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             original: sections.order,
             done: (next) => {
                 const same = next.join() === sections.order.join();
+                if ((same ? null : next)?.join() === order?.join()) return;
+                record('Arrangement');
                 order = same ? null : next;
                 setArrangement(s.id, order);
                 if (stepping) stopStep();
                 draw();
                 relink();
-                toast(same ? 'Back to the original order' : 'Arranged');
+                toastUndo(same ? 'Back to the original order' : 'Arranged');
             },
         });
+    // reharm, history and the order stay pinned under the bar
+    const dock = el('div', 'cg-dock');
+    dock.append(tools, orderBar);
+    let stuck = false;
+    /** pinned, the dock folds to one row; its margin keeps the sheet still */
+    const pin = (): void => {
+        const now = key.getBoundingClientRect().bottom < bar.offsetHeight;
+        if (now === stuck) return;
+        stuck = now;
+        const tall = dock.getBoundingClientRect().height;
+        dock.classList.toggle('cg-stuck', stuck);
+        dock.style.marginBottom = stuck
+            ? `${tall - dock.getBoundingClientRect().height}px`
+            : '';
+    };
     const syncTools = (): void => {
         reharmBtn.classList.toggle('cg-on', reharm);
         reharmBtn.setAttribute('aria-pressed', String(reharm));
@@ -352,7 +434,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const middle = button(
         '',
         () => {
-            if (!home) return;
+            if (!written) return;
             if (picker.hidden) fillPicker(true);
             if (picker.hidden) slideOpen(picker);
             else slideClosed(picker);
@@ -384,12 +466,12 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const picker = el('div', 'cg-keys');
     picker.hidden = true;
     const fillPicker = (force = false): void => {
-        if (!home || (picker.hidden && !force)) return;
-        const minorKey = /m$/.test(shiftKey(home, 0));
+        if (!written || (picker.hidden && !force)) return;
+        const minorKey = /m$/.test(shiftKey(written, 0));
         picker.replaceChildren(
             ...Array.from({ length: 12 }, (_, i) => {
                 const name = shiftKey(minorKey ? 'Cm' : 'C', i);
-                const to = keyDistance(home, name);
+                const to = keyDistance(written, name);
                 const pick = button(
                     name,
                     () => {
@@ -483,6 +565,19 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         else if (x < 0.25) goTo(pageIndex - 1);
     });
     const keys = (e: KeyboardEvent): void => {
+        const mod = e.metaKey || e.ctrlKey;
+        const typing = (e.target as Element | null)?.closest('input, textarea');
+        if (mod && !typing && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            if (e.shiftKey) redo();
+            else undo();
+            return;
+        }
+        if (mod && !typing && e.key.toLowerCase() === 'y') {
+            e.preventDefault();
+            redo();
+            return;
+        }
         if (stepping) {
             // pedals send these too
             if ([' ', 'ArrowRight', 'PageDown', 'Enter'].includes(e.key)) {
@@ -505,6 +600,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     };
     addEventListener('keydown', keys);
     addEventListener('resize', resize);
+    addEventListener('scroll', pin, { passive: true });
     leaveSong = () => {
         closeArranger();
         stopHeld();
@@ -513,6 +609,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         closeChooser();
         removeEventListener('keydown', keys);
         removeEventListener('resize', resize);
+        removeEventListener('scroll', pin);
     };
 
     // playing draws each different section once and jumps back for repeats
@@ -524,6 +621,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         );
         sheet.classList.toggle('cg-reharm', reharm);
         syncTools();
+        syncHistory();
         syncOrder(stepping ? (steps()[cursor]?.block ?? -1) : -1);
         if (reharm && !stepping) decorate();
         if (stepping) mark();
@@ -532,7 +630,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         if (view === 'pages') layout();
     };
     // reharm: tappable chords, edits marked, passing-chord gaps
-    const saveEdits = (next: Edit[]): void => {
+    const saveEdits = (next: Edit[], why = 'Reharm'): void => {
+        record(why);
         edits = next;
         setEdits(s.id, edits);
         draw();
@@ -750,9 +849,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         holdChord(heard(at.chord));
         mark();
         syncOrder(at.block);
-        nowName.textContent = heard(at.chord);
+        nowName.textContent = label(at.chord);
         const after = list[cursor + 1];
-        nextName.textContent = after ? `then ${heard(after.chord)}` : 'end';
+        nextName.textContent = after ? `then ${label(after.chord)}` : 'end';
         const node = nodeAt(at.row, at.piece);
         if (node) follow(node);
     };
@@ -820,6 +919,61 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         go(cursor + 1);
     };
 
+    const snap = (why: string): Snap => ({
+        why,
+        sheet: s.sheet,
+        shift,
+        edits,
+        order,
+        at: Date.now(),
+    });
+    /** before a change: remember how it was */
+    function record(why: string, merge = false): void {
+        const last = hist.past[hist.past.length - 1];
+        if (merge && last?.why === why && Date.now() - last.at < 2000) {
+            last.at = Date.now();
+            return;
+        }
+        hist.past.push(snap(why));
+        if (hist.past.length > 60) hist.past.shift();
+        hist.future = [];
+    }
+    const restore = (to: Snap): void => {
+        if (to.sheet !== s.sheet) {
+            const updated = updateSheet(s.id, to.sheet, to.edits, to.order);
+            setShift(s.id, to.shift);
+            if (updated) renderSong(app, { ...updated, shift: to.shift });
+            return;
+        }
+        shift = to.shift;
+        edits = to.edits;
+        order = to.order;
+        setShift(s.id, shift);
+        setEdits(s.id, edits);
+        setArrangement(s.id, order);
+        if (stepping) stopStep();
+        closeChooser();
+        draw();
+        relink();
+    };
+    function undo(): void {
+        const to = hist.past.pop();
+        if (!to) return;
+        hist.future.push(snap(to.why));
+        restore(to);
+        toast(`Undid ${to.why.toLowerCase()}`);
+    }
+    function redo(): void {
+        const to = hist.future.pop();
+        if (!to) return;
+        hist.past.push(snap(to.why));
+        restore(to);
+        toast(`Redid ${to.why.toLowerCase()}`);
+    }
+    /** a change worth a second chance: the message carries an undo */
+    const toastUndo = (text: string): void =>
+        toast(text, { label: 'UNDO', run: undo });
+
     const editSheet = (): void =>
         openEditor({
             text: sheetText(lines),
@@ -835,9 +989,10 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                 const keepOrder = order?.every((id) => ids.has(id))
                     ? order
                     : null;
+                record('Lyrics');
                 const updated = updateSheet(s.id, text, kept, keepOrder);
                 if (updated) renderSong(app, updated);
-                toast('Saved');
+                toastUndo('Lyrics saved');
             },
         });
 
@@ -850,6 +1005,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         });
     };
     const move = (by: number): void => {
+        // a run of key taps undoes as one
+        record('Key', true);
         const next = shift + by;
         // a full octave round is the original
         shift = Math.abs(next) >= 12 ? 0 : next;
@@ -858,7 +1015,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         relink();
     };
 
-    app.append(bar, key, tools, orderBar, picker, sheet, pager, stepBar);
+    app.append(bar, key, dock, picker, sheet, pager, stepBar);
     draw();
     relink();
     layout();
@@ -868,6 +1025,10 @@ export function renderSong(app: HTMLElement, s: Saved): void {
 
 const SPARK_ICON =
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>';
+const UNDO_ICON =
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>';
+const REDO_ICON =
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>';
 const PLAY_ICON =
     '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>';
 const STOP_ICON =
@@ -951,9 +1112,27 @@ function openPop(pop: HTMLElement, from: HTMLElement): void {
     );
 }
 
-function toast(text: string): void {
-    const note = el('p', 'cg-toast', text);
+let lastToast: HTMLElement | null = null;
+
+function toast(text: string, action?: { label: string; run: () => void }): void {
+    if (lastToast) {
+        const old = lastToast;
+        popOut(old, () => old.remove());
+    }
+    const note = el('div', 'cg-toast');
+    note.append(el('span', 'cg-toast-text', text));
+    if (action) {
+        const act = button(action.label, () => {
+            popOut(note, () => note.remove());
+            action.run();
+        }, 'cg-toast-action');
+        note.append(act);
+    }
     document.body.append(note);
+    lastToast = note;
     popIn(note);
-    window.setTimeout(() => popOut(note, () => note.remove()), 1800);
+    window.setTimeout(
+        () => popOut(note, () => note.remove()),
+        action ? 4000 : 1800,
+    );
 }

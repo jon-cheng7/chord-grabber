@@ -414,7 +414,7 @@ body {
 .cg-bar {
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: 2;
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -727,16 +727,40 @@ body {
     position: fixed;
     bottom: calc(1.5rem + env(safe-area-inset-bottom));
     left: 50%;
-    z-index: 3;
-    margin: 0 0 0 -6rem;
-    width: 12rem;
-    padding: 0.6rem 0.8rem;
+    z-index: 7;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    max-width: calc(100% - 2rem);
+    padding: 0.55rem 0.6rem 0.55rem 0.9rem;
     border: 1px solid var(--cg-line);
-    border-radius: 10px;
+    border-radius: 12px;
     background: var(--cg-panel);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
     color: var(--cg-fg);
     font: 400 0.85rem var(--cg-mono);
-    text-align: center;
+    white-space: nowrap;
+    translate: -50% 0;
+}
+
+/* above the step bar when it's up */
+.cg-has-stepbar ~ .cg-toast,
+body:has(.cg-has-stepbar) .cg-toast {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+
+.cg-toast-action {
+    padding: 0.35rem 0.6rem;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--cg-accent);
+    font: 600 0.75rem var(--cg-mono);
+    letter-spacing: 0.12em;
+}
+
+.cg-toast-action:active {
+    background: #1f1f1f;
 }
 
 .cg-sizes {
@@ -1100,7 +1124,6 @@ body {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    margin: 0.5rem 0 0;
 }
 
 .cg-reharm-btn {
@@ -1441,4 +1464,105 @@ body {
 
 .cg-sorting {
     user-select: none;
+}
+
+/* Undo and redo: at the end of the tools row once there's history */
+
+.cg-history-box {
+    display: flex;
+    flex: none;
+    margin-left: auto;
+}
+
+.cg-history-box[hidden] {
+    display: none;
+}
+
+.cg-history {
+    border: 0;
+    background: none;
+}
+
+.cg-history:disabled {
+    opacity: 0.3;
+}
+
+.cg-tools-hint {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.cg-print-order {
+    margin: 0.3em 0 0;
+    font: 600 11px var(--cg-mono);
+    letter-spacing: 0.08em;
+    word-spacing: 0.2em;
+}
+
+/* Dock: reharm, history and the order, pinned under the bar */
+
+.cg-dock {
+    position: sticky;
+    /* the bar's height: its icons, padding and border */
+    top: calc(3.75rem + 1px + env(safe-area-inset-top));
+    z-index: 1;
+    margin: 0 calc(-1 * var(--cg-pad));
+    padding: 0.5rem var(--cg-pad) 0;
+    background: var(--cg-bg);
+}
+
+/* pinned: one slim row, the hint and clear wait up top */
+.cg-dock.cg-stuck {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem var(--cg-pad);
+    border-bottom: 1px solid var(--cg-line);
+    background: rgba(10, 10, 10, 0.94);
+}
+
+.cg-bar:has(~ .cg-stuck) {
+    border-bottom-color: transparent;
+}
+
+.cg-stuck .cg-tools {
+    display: contents;
+}
+
+.cg-stuck .cg-tools-hint,
+.cg-stuck .cg-tools-clear,
+.cg-stuck .cg-reharm-btn span,
+.cg-stuck .cg-order-edit {
+    display: none;
+}
+
+.cg-stuck .cg-reharm-btn {
+    min-height: 2.25rem;
+    padding: 0 0.7rem;
+}
+
+.cg-stuck .cg-order {
+    flex: 1;
+    order: 1;
+    min-width: 0;
+    margin: 0;
+    padding: 0.35rem 0.5rem;
+}
+
+.cg-stuck .cg-history-box {
+    order: 2;
+}
+
+.cg-stuck .cg-history {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0;
+}
+
+@media (min-width: 48rem) {
+    .cg-stuck .cg-reharm-btn span,
+    .cg-stuck .cg-order-edit {
+        display: inline;
+    }
 }

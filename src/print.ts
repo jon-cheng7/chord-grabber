@@ -30,6 +30,7 @@ export function printSong(
     song: SongSource,
     sheet: DocumentFragment,
     key: string,
+    order = '',
 ): void {
     document.querySelector('.cg-print')?.remove();
     const page = el('div', 'cg-print cg-print-measure');
@@ -37,6 +38,8 @@ export function printSong(
     head.append(el('h1', 'cg-print-title', song.title));
     const sub = [song.artist, key].filter(Boolean).join(' · ');
     if (sub) head.append(el('p', 'cg-print-sub', sub));
+    // sections print once; the order says when they come round again
+    if (order) head.append(el('p', 'cg-print-order', order));
     const body = el('div', 'cg-sheet cg-print-sheet');
     body.append(sheet);
     page.append(head, body);

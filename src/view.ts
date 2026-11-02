@@ -38,6 +38,8 @@ export interface Step {
 export interface Compact {
     lines: readonly Line[];
     steps: Step[];
+    /** per block of the arrangement: a reharmed copy of an earlier section */
+    variant: boolean[];
 }
 
 /** an edit for one occurrence beats one for every occurrence */
@@ -109,16 +111,25 @@ export function compact(view: View): Compact {
     const firstOf = new Map<string, number>();
     // full-view row → compact row, for the blocks that are drawn
     const place = new Map<number, number>();
+    const ids = new Set<string>();
     view.blocks.forEach((b) => {
         const key = `${b.id}|${b.sig}`;
         if (firstOf.has(key)) return;
         firstOf.set(key, b.start);
+        // the same section again, reharmed: say so in its heading
+        const variant = ids.has(b.id);
+        ids.add(b.id);
         if (lines.length && lines[lines.length - 1]?.kind !== 'blank')
             lines.push({ kind: 'blank' });
         for (let r = b.start; r < b.end; r++) {
             place.set(r, lines.length);
             const line = view.lines[r];
-            if (line) lines.push(line);
+            if (!line) continue;
+            lines.push(
+                variant && r === b.start && line.kind === 'section'
+                    ? { ...line, label: `${line.label} · reharmed` }
+                    : line,
+            );
         }
     });
     const all = spots(view.lines);
@@ -138,5 +149,10 @@ export function compact(view: View): Compact {
             });
         }
     });
-    return { lines, steps };
+    const variant = view.blocks.map(
+        (b) =>
+            firstOf.get(`${b.id}|${b.sig}`) === b.start &&
+            view.blocks.some((x) => x.id === b.id && x.start < b.start),
+    );
+    return { lines, steps, variant };
 }

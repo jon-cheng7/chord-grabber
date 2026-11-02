@@ -1,6 +1,7 @@
 // Home: what it is, the Shortcut setup, paste, saved songs
 
 import { smoothDetails } from './animate.ts';
+import { songKey } from './key.ts';
 import { parseSheet } from './parse.ts';
 import { renderSheet } from './render.ts';
 import { MAC, bookmarkletHref, browser, type Browser } from './bookmarklet.ts';
@@ -318,7 +319,8 @@ function saved(): HTMLElement | null {
         const tile = el(
             'span',
             'cg-tile',
-            s.key ?? s.title.slice(0, 1).toUpperCase(),
+            songKey(s.key, parseSheet(s.sheet), s.capo) ??
+                s.title.slice(0, 1).toUpperCase(),
         );
         const words = el('span', 'cg-recent-words');
         words.append(

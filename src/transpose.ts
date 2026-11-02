@@ -95,24 +95,6 @@ export function usesFlats(writtenKey: string, n: number): boolean {
     return FLAT_KEYS.has(shiftKey(writtenKey, n));
 }
 
-/** the first chord stands in for an unknown key */
-export function firstChord(lines: readonly Line[]): string | null {
-    for (const line of lines) {
-        const pieces =
-            line.kind === 'lyric'
-                ? line.units.flat()
-                : line.kind === 'chords'
-                  ? line.items
-                  : [];
-        const hit = pieces.find((p) => p.chord);
-        if (hit?.chord) {
-            const c = parseChord(hit.chord);
-            if (c) return `${c.root}${minor(c.quality) ? 'm' : ''}`;
-        }
-    }
-    return null;
-}
-
 /** every chord name through one function, bar notation included */
 function mapChords(
     lines: readonly Line[],
@@ -159,4 +141,25 @@ export function simplifyChord(name: string): string {
 
 export function simplifyLines(lines: readonly Line[]): readonly Line[] {
     return mapChords(lines, simplifyChord);
+}
+
+const DEGREES = ['1', '♭2', '2', '♭3', '3', '4', '♯4', '5', '♭6', '6', '♭7', '7'];
+
+/** G in the key of D → 4; Em7 → 2m7; D/F# → 1/3 */
+export function numberChord(name: string, key: string): string {
+    const chord = parseChord(name);
+    const home = parseChord(key);
+    if (!chord || !home) return name;
+    const tonic = pitch(home.root);
+    const deg = (note: string): string =>
+        DEGREES[mod(pitch(note) - tonic)] ?? '?';
+    const bass = chord.bass ? `/${deg(chord.bass)}` : '';
+    return `${deg(chord.root)}${chord.quality}${bass}`;
+}
+
+export function numberLines(
+    lines: readonly Line[],
+    key: string,
+): readonly Line[] {
+    return mapChords(lines, (name) => numberChord(name, key));
 }
