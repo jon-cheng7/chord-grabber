@@ -1,0 +1,69 @@
+// Parsed lines → DOM that wraps without losing chord positions
+
+import type { Line, Piece } from './parse.ts';
+
+function el(tag: string, className: string, text?: string): HTMLElement {
+    const node = document.createElement(tag);
+    node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+}
+
+function piece(p: Piece): HTMLElement {
+    const node = el('span', 'cg-piece');
+    // empty chord keeps the row height so lyrics line up
+    node.append(
+        el('span', 'cg-chord', p.chord ?? ''),
+        el('span', 'cg-words', p.text),
+    );
+    if (p.chord) node.dataset.chord = '';
+    return node;
+}
+
+export function renderSheet(lines: readonly Line[]): DocumentFragment {
+    const out = document.createDocumentFragment();
+    for (const line of lines) {
+        switch (line.kind) {
+            case 'section':
+                out.append(el('h2', 'cg-section', line.label));
+                break;
+            case 'blank':
+                out.append(el('div', 'cg-blank'));
+                break;
+            case 'tab':
+                out.append(el('pre', 'cg-tab', line.text));
+                break;
+            case 'chords': {
+                const row = el('div', 'cg-line cg-line-chords');
+                for (const item of line.items) {
+                    row.append(
+                        item.chord
+                            ? el('span', 'cg-chord', item.chord)
+                            : el('span', 'cg-filler', item.text),
+                    );
+                }
+                out.append(row);
+                break;
+            }
+            case 'lyric': {
+                const row = el(
+                    'div',
+                    line.chords ? 'cg-line cg-line-paired' : 'cg-line',
+                );
+                for (const unit of line.units) {
+                    const group = el('span', 'cg-unit');
+                    for (const p of unit)
+                        group.append(
+                            line.chords
+                                ? piece(p)
+                                : document.createTextNode(p.text),
+                        );
+                    row.append(group);
+                }
+                out.append(row);
+                break;
+            }
+        }
+    }
+    return out;
+}

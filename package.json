@@ -1,0 +1,22 @@
+{
+    "name": "chord-grabber",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "engines": {
+        "node": ">=22.18"
+    },
+    "scripts": {
+        "dev": "vite --host",
+        "build": "tsc --noEmit && vite build",
+        "preview": "vite preview --host",
+        "test": "node --test \"src/**/*.test.ts\"",
+        "format": "prettier --write ."
+    },
+    "devDependencies": {
+        "@types/node": "^26.6.6",
+        "prettier": "^3.9.10",
+        "typescript": "^7.0.2",
+        "vite": "^8.3.5"
+    }
+}
