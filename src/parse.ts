@@ -41,25 +41,38 @@ const TAB = /^\s*[eBGDAEbgdae]?\s*\|[-0-9hpbr/\\~x|()\s]*$/;
 function scanMarked(line: string): Scanned {
     const chords: Placed[] = [];
     const bareChords: Placed[] = [];
+    // unmarked chords in the gaps: |Gb / |[ch]Bbm[/ch]
+    const loose: Placed[] = [];
     let text = '';
     let bare = '';
+    const gap = (part: string): void => {
+        for (const m of part.matchAll(/[^\s|]+/g))
+            if (isChord(m[0]))
+                loose.push({ col: text.length + m.index, name: m[0] });
+        text += part;
+        bare += part;
+    };
     const re = /\[ch\](.*?)\[\/ch\]/g;
     let last = 0;
     for (let m = re.exec(line); m; m = re.exec(line)) {
-        const between = line.slice(last, m.index);
-        text += between;
-        bare += between;
+        gap(line.slice(last, m.index));
         const name = m[1] ?? '';
         chords.push({ col: text.length, name });
         bareChords.push({ col: bare.length, name });
         text += name;
         last = m.index + m[0].length;
     }
-    text += line.slice(last);
-    bare += line.slice(last);
+    gap(line.slice(last));
     const chordOnly =
         chords.length > 0 &&
-        bare.split(/\s+/).filter(Boolean).every(isChordLineFiller);
+        bare
+            .split(/[\s|]+/)
+            .filter(Boolean)
+            .every((t) => isChordLineFiller(t) || isChord(t));
+    if (chordOnly && loose.length) {
+        chords.push(...loose);
+        chords.sort((a, b) => a.col - b.col);
+    }
     return { text, chords, chordOnly, bare, bareChords };
 }
 

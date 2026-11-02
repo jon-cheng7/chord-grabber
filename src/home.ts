@@ -1,5 +1,6 @@
 // Home: what it is, the Shortcut setup, paste, saved songs
 
+import { smoothDetails } from './animate.ts';
 import { parseSheet } from './parse.ts';
 import { renderSheet } from './render.ts';
 import { MAC, bookmarkletHref, browser, type Browser } from './bookmarklet.ts';
@@ -13,7 +14,7 @@ export interface HomeActions {
 
 /** iCloud link to the iPhone Shortcut */
 export const SHORTCUT_URL =
-    'https://www.icloud.com/shortcuts/b0b56ca6846549cdb12162f05118f0ca';
+    'https://www.icloud.com/shortcuts/75275afaee72489b956b9ee887c6bf76';
 
 const SAMPLE =
     'Am            F         C\nAny chord sheet, sized for your phone';
@@ -361,6 +362,7 @@ export function renderHome(
     root.append(paste(actions, !IOS));
     const list = saved();
     if (list) root.append(list);
+    smoothDetails(root);
 }
 
 /** the Shortcut or bookmarklet opened us: one big tap to read the clipboard */

@@ -606,16 +606,11 @@ body {
 .cg-key-btn {
     flex: 1;
     min-height: 2.75rem;
-    border: 1px solid var(--cg-line);
-    border-radius: 10px;
+    border: 0;
     background: none;
     color: var(--cg-muted);
     font: 400 0.75rem var(--cg-mono);
     letter-spacing: 0.12em;
-}
-
-.cg-key-btn:active {
-    background: #1f1f1f;
 }
 
 .cg-keys {
@@ -631,24 +626,33 @@ body {
 
 .cg-key {
     min-height: 2.75rem;
-    border: 1px solid var(--cg-line);
-    border-radius: 10px;
-    background: var(--cg-panel);
+    border: 0;
+    background: none;
     color: var(--cg-fg);
     font: 600 0.85rem var(--cg-mono);
 }
 
-.cg-key:active {
-    background: #1f1f1f;
-}
-
 /* original key */
 .cg-key-home {
-    border-style: dashed;
-    border-color: var(--cg-muted);
+    position: relative;
+}
+
+.cg-key-home::after {
+    content: '';
+    position: absolute;
+    bottom: 0.35rem;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    margin-left: -2px;
+    border-radius: 50%;
+    background: var(--cg-muted);
 }
 
 .cg-key-on {
-    border-color: var(--cg-accent);
     color: var(--cg-accent);
+}
+
+.cg-key-on::after {
+    background: var(--cg-accent);
 }

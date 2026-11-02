@@ -8,6 +8,8 @@ const JUNK =
     'script, style, noscript, template, svg, iframe, nav, footer, aside, form, button, select, input, textarea, dialog, [role="dialog"], [hidden], [aria-hidden="true"]';
 const JUNK_NAME =
     /^(?:comments?|comment-.*|sidebar|related.*|share|social.*|footer|breadcrumbs?|menu|navbar|cookie.*|newsletter|ads?|advert.*|promo.*|modal.*|.*-modal|popup.*|login.*|signup.*|subscribe.*)$/i;
+// page widgets inside the song box: transposers, downloads, toolbars
+const TOOLS = /transpose|download|toolbar|controls|print/i;
 const BLOCK =
     /^(?:address|article|blockquote|dd|div|dl|dt|figure|h[1-6]|header|hr|li|main|ol|p|pre|section|table|tbody|thead|tr|td|th|ul)$/;
 const LABEL =
@@ -24,7 +26,11 @@ function strip(root: Element): void {
     for (const el of root.querySelectorAll(JUNK)) el.remove();
     for (const el of root.querySelectorAll('[class], [id]')) {
         const names = `${el.getAttribute('class') ?? ''} ${el.id}`;
-        if (names.split(/\s+/).some((n) => JUNK_NAME.test(n))) el.remove();
+        if (
+            names.split(/\s+/).some((n) => JUNK_NAME.test(n)) ||
+            TOOLS.test(names)
+        )
+            el.remove();
     }
     for (const el of root.querySelectorAll('[style]')) {
         if (/display\s*:\s*none/i.test(el.getAttribute('style') ?? ''))
@@ -35,7 +41,14 @@ function strip(root: Element): void {
 /** '' for anything too long to be a chord */
 function chordText(el: Element): string {
     const raw = el.textContent ?? '';
-    return raw.length > 60 ? '' : clean(raw).replace(/\s+/g, '');
+    // bar lines ride along: |Gb
+    return raw.length > 60 ? '' : clean(raw).replace(/[\s|]+/g, '');
+}
+
+function depth(el: Element): number {
+    let d = 0;
+    for (let p = el.parentElement; p; p = p.parentElement) d++;
+    return d;
 }
 
 /** styled chord marks: elements naming one chord, the biggest tag + class group */
@@ -47,15 +60,19 @@ function chordMarks(root: Element): Element[] {
         // Bb<span>m</span>: the whole name, not its parts
         const up = el.parentElement ? chordText(el.parentElement) : '';
         if (up !== text && isChord(up)) continue;
-        if ([...el.children].some((c) => chordText(c) === text)) continue;
         const sig = `${tag(el)}.${(el.getAttribute('class') ?? '').trim()}`;
         const list = groups.get(sig) ?? [];
         list.push(el);
         groups.set(sig, list);
     }
+    // most chords wins; on a tie the tighter wrapper
     let best: Element[] = [];
-    for (const list of groups.values())
-        if (list.length > best.length) best = list;
+    for (const list of groups.values()) {
+        const tie =
+            list.length === best.length &&
+            depth(list[0]!) > depth(best[0]!);
+        if (list.length > best.length || tie) best = list;
+    }
     return best.length >= MIN_CHORDS ? best : [];
 }
 
@@ -121,9 +138,12 @@ function serialize(root: Element, marks: Set<Element> = new Set()): string {
             return;
         }
         if (marks.has(el)) {
-            if (lastChord) out += ' ';
-            out += `[ch]${chordText(el)}[/ch]`;
-            lastChord = true;
+            const raw = clean(el.textContent ?? '').trim();
+            const lead = /^\|+/.exec(raw)?.[0] ?? '';
+            const tail = /\|+$/.exec(raw)?.[0] ?? '';
+            if (lastChord && !lead) out += ' ';
+            out += `${lead}[ch]${chordText(el)}[/ch]${tail}`;
+            lastChord = !tail;
             return;
         }
         const text = clean(el.textContent ?? '').trim();
@@ -139,7 +159,11 @@ function serialize(root: Element, marks: Set<Element> = new Set()): string {
         if (block || line) breakLine();
     };
     walk(root, false);
-    return out;
+    // Db/F split over two marks
+    return out.replace(
+        /\[ch\]([^[]+)\[\/ch\]\/\[ch\]([A-G](?:#|b)?)\[\/ch\]/g,
+        '[ch]$1/$2[/ch]',
+    );
 }
 
 /** chords-over-lyrics text: how much of it reads as a chord sheet */
@@ -195,12 +219,21 @@ interface Found {
     score: number;
 }
 
+/** stray widget text above the song: drop it */
+function fromFirstChord(sheet: string): string {
+    const lines = sheet.split('\n');
+    const start = lines.findIndex(
+        (l) => l.includes('[ch]') || LABEL.test(l.trim()),
+    );
+    return start > 0 ? lines.slice(start).join('\n') : sheet;
+}
+
 function chordBlock(body: Element): Found | null {
     let best: Found | null = null;
     const marks = chordMarks(body);
     const box = marks.length ? holder(marks) : null;
     if (box) {
-        const sheet = serialize(box, new Set(marks));
+        const sheet = fromFirstChord(serialize(box, new Set(marks)));
         if (textScore(sheet) > 0)
             best = { sheet, block: box, score: marks.length };
     }

@@ -1,6 +1,7 @@
 // Routes: home, the Shortcut's load screen, a song sheet
 
 import './style.css';
+import { slideClosed, slideOpen } from './animate.ts';
 import { receive } from './bookmarklet.ts';
 import {
     renderHome,
@@ -222,8 +223,13 @@ function showSong(s: Saved): void {
     picker.hidden = true;
     const togglePicker = (): void => {
         if (!home) return;
-        picker.hidden = !picker.hidden;
+        if (!picker.hidden) {
+            slideClosed(picker);
+            return;
+        }
+        picker.hidden = false;
         fillPicker();
+        slideOpen(picker);
     };
     const fillPicker = (): void => {
         if (!home || picker.hidden) return;
@@ -236,7 +242,7 @@ function showSong(s: Saved): void {
                     name,
                     () => {
                         move(to - shift);
-                        picker.hidden = true;
+                        slideClosed(picker);
                     },
                     'cg-key',
                 );
