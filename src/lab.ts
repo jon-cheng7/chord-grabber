@@ -4,8 +4,9 @@
 import './style.css';
 import './lab.css';
 import { capture, type Capture } from './capture.ts';
-import { summarize, tuning, type Frame } from './listen/summary.ts';
-import { noteName } from './music/theory.ts';
+import { summarize, tuning, type Frame, type Key } from './listen/summary.ts';
+import { parseChord } from './music/chord.ts';
+import { minor, noteName, pitch, shiftKey } from './music/theory.ts';
 
 interface Take {
     version: 1;
@@ -13,6 +14,8 @@ interface Take {
     device: string;
     frames: Frame[];
     taps: number[];
+    /** the song's key, if you set one */
+    key?: string;
 }
 
 // the trace: the last few seconds, low male to high soprano
@@ -71,8 +74,25 @@ stop.disabled = true;
 tap.disabled = true;
 save.disabled = true;
 
+// the song's key: off-pitch notes are read as the scale note they lean toward
+const keyPick = el('select', 'cg-btn lab-key');
+keyPick.add(new Option('NO KEY', ''));
+for (const m of [false, true])
+    for (let i = 0; i < 12; i++) {
+        const k = shiftKey(m ? 'Cm' : 'C', i);
+        keyPick.add(new Option(`KEY ${k}`, k));
+    }
+keyPick.addEventListener('change', () => {
+    take.key = keyPick.value || undefined;
+    if (!live && take.frames.length) report();
+});
+const keyOf = (name: string | undefined): Key | null => {
+    const c = name ? parseChord(name) : null;
+    return c ? { tonic: pitch(c.root), minor: minor(c.quality) } : null;
+};
+
 const controls = el('div', 'lab-row');
-controls.append(start, stop, save, open, load);
+controls.append(start, stop, keyPick, save, open, load);
 const readout = el('div', 'lab-readout');
 readout.append(note, cents, clarity);
 root.append(
@@ -119,6 +139,7 @@ async function begin(): Promise<void> {
         device: navigator.userAgent,
         frames: [],
         taps: [],
+        key: keyPick.value || undefined,
     };
     results.replaceChildren();
     status.textContent = 'Listening. Tap on the first chord to start.';
@@ -181,7 +202,7 @@ function paint(): void {
 
 /** what the summary made of it: per chord, its notes, or unknown */
 function report(): void {
-    const spans = summarize(take.frames, take.taps);
+    const spans = summarize(take.frames, take.taps, keyOf(take.key));
     const tuned = tuning(take.frames);
     const sure = spans.filter((s) => s.sure).length;
     results.replaceChildren(
@@ -238,6 +259,7 @@ load.addEventListener('change', () => {
     void file.text().then((text) => {
         try {
             take = JSON.parse(text) as Take;
+            keyPick.value = take.key ?? '';
             status.textContent = `Opened a take from ${take.at}.`;
             save.disabled = false;
             paint();

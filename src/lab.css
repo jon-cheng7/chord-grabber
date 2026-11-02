@@ -117,3 +117,8 @@
 .lab-unsure .lab-kmn {
     color: var(--cg-muted);
 }
+
+.lab-key {
+    color: var(--cg-fg);
+    font: 600 0.8rem var(--cg-mono);
+}

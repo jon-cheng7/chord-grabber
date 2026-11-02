@@ -6,6 +6,15 @@ export interface Frame {
     t: number;
     hz: number;
     clarity: number;
+    /** loudness of the newest moment; missing from early takes */
+    level?: number;
+}
+
+/** the song's key, so an off-pitch note can be read as the scale note it meant */
+export interface Key {
+    /** pitch class of home, 0 is C */
+    tonic: number;
+    minor: boolean;
 }
 
 /** one sung note: frames held on one pitch */
@@ -35,28 +44,46 @@ const CLEAR = 0.8;
 const NEW_NOTE = 0.8;
 // an unclear frame or two inside a held note doesn't end it
 const GAP = 2;
+// the same pitch sung again: loudness falls under half and climbs back
+const DIP = 0.5;
+const RISE = 1.8;
+const BACK = 0.6;
 // the voice scoops into a note: its pitch is read after this
 const SCOOP = 0.06;
 // shorter than this is a slip or an ornament, not a note
-const MIN_NOTE = 0.08;
+const MIN_NOTE = 0.06;
+// off a scale note by this much (semitones), toward it: read as that note
+const SNAP = 0.2;
 // a note pushed this early, carrying over the change, belongs to the next chord
 const PUSH = 0.15;
 // sung within this of the change: on the beat
 const DOWNBEAT = 0.25;
 // voiced seconds needed before the singer's own tuning is trusted
-const LONG_TAKE = 8;
+const LONG_TAKE = 4;
 // sure: this much clear singing, and the winner this far ahead
 const MIN_VOICED = 0.3;
 const MARGIN = 0.15;
 
-// what makes a key melody note, out of 1: held long, held often, the first, on the beat
+// what makes a key melody note, out of 1. Where the phrase lands counts most:
+// quick, wordy melodies hold their last note longest, but it isn't the one
 const SCORE = {
-    longest: 0.3,
-    held: 0.25,
+    longest: 0.25,
+    held: 0.2,
     repeats: 0.1,
-    first: 0.1,
-    downbeat: 0.25,
+    first: 0.15,
+    downbeat: 0.3,
 };
+
+// the key's own notes; minor keeps its raised seventh, the V chord's
+const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_SCALE = [0, 2, 3, 5, 7, 8, 10, 11];
+
+const scaleOf = (key: Key): Set<number> =>
+    new Set(
+        (key.minor ? MINOR_SCALE : MAJOR_SCALE).map(
+            (s) => (key.tonic + s) % 12,
+        ),
+    );
 
 const midi = (hz: number): number => 69 + 12 * Math.log2(hz / 440);
 const pcOf = (m: number): number => ((Math.round(m) % 12) + 12) % 12;
@@ -89,12 +116,31 @@ export function tuning(frames: readonly Frame[]): number {
     return (Math.atan2(y, x) / (2 * Math.PI)) * 100;
 }
 
-/** frames grouped into held notes; slips, breaths and scoops left out */
-export function notes(frames: readonly Frame[], cents = 0): Note[] {
+/** a note between two pitches, leaning toward one in the key: that one */
+function snap(m: number, scale: Set<number> | null): number {
+    const near = Math.round(m);
+    const lean = m - near;
+    if (!scale || scale.has(pcOf(near)) || Math.abs(lean) < SNAP) return near;
+    const other = near + Math.sign(lean);
+    return scale.has(pcOf(other)) ? other : near;
+}
+
+/**
+ * frames grouped into sung notes: a new note on a change of pitch, or the same
+ * pitch sung again. Slips, breaths and scoops left out
+ */
+export function notes(
+    frames: readonly Frame[],
+    cents = 0,
+    key: Key | null = null,
+): Note[] {
     const hop = hopOf(frames);
+    const scale = key ? scaleOf(key) : null;
     const out: Note[] = [];
     let run: { t: number; m: number }[] = [];
     let missed = 0;
+    let peak = 0;
+    let dip = Infinity;
     const close = (): void => {
         const start = run[0]?.t;
         const end = run[run.length - 1]?.t;
@@ -102,21 +148,34 @@ export function notes(frames: readonly Frame[], cents = 0): Note[] {
             const settled = run.filter((r) => r.t - start >= SCOOP);
             const m = median((settled.length ? settled : run).map((r) => r.m));
             if (end + hop - start >= MIN_NOTE)
-                out.push({ pc: pcOf(m), start, end: end + hop });
+                out.push({ pc: pcOf(snap(m, scale)), start, end: end + hop });
         }
         run = [];
         missed = 0;
+        peak = 0;
+        dip = Infinity;
     };
     for (const f of frames) {
+        const level = f.level;
         if (f.clarity < CLEAR || f.hz <= 0) {
-            if (run.length && ++missed > GAP) close();
+            if (!run.length) continue;
+            if (level !== undefined) dip = Math.min(dip, level);
+            if (++missed > GAP) close();
             continue;
         }
         const m = midi(f.hz) - cents / 100;
         const held = median(run.slice(-5).map((r) => r.m));
-        if (run.length && !(Math.abs(m - held) <= NEW_NOTE)) close();
+        const again =
+            level !== undefined &&
+            dip < peak * DIP &&
+            level > dip * RISE &&
+            level >= peak * BACK;
+        if (run.length && (again || !(Math.abs(m - held) <= NEW_NOTE))) close();
         missed = 0;
         run.push({ t: f.t, m });
+        if (level === undefined) continue;
+        if (level > peak) peak = dip = level;
+        else dip = Math.min(dip, level);
     }
     close();
     return out;
@@ -129,9 +188,10 @@ export function notes(frames: readonly Frame[], cents = 0): Note[] {
 export function summarize(
     frames: readonly Frame[],
     bounds: readonly number[],
+    key: Key | null = null,
     cents = tuning(frames),
 ): Heard[] {
-    const all = notes(frames, cents);
+    const all = notes(frames, cents, key);
     return bounds.slice(1).map((end, i) => {
         const start = bounds[i]!;
         // a note belongs to the chord it starts in, unless it's pushed into the next

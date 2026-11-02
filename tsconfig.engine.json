@@ -9,5 +9,5 @@
         "outDir": "node_modules/.cache/engine",
         "tsBuildInfoFile": "node_modules/.cache/engine/tsbuildinfo"
     },
-    "include": ["src/engine", "src/music"]
+    "include": ["src/engine", "src/music", "src/listen"]
 }

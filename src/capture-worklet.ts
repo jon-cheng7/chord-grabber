@@ -37,12 +37,17 @@ class Listen extends AudioWorkletProcessor {
             this.count = 0;
             if (this.filled < SIZE) continue;
             const p = yin(this.frame, this.rate, this.scratch);
+            // loudness of the newest hop: a dip and rise is a new syllable
+            let energy = 0;
+            for (let k = SIZE - HOP; k < SIZE; k++)
+                energy += this.frame[k]! * this.frame[k]!;
             // stamped at the frame's middle, on the context's clock
             const t = currentTime + i / sampleRate - SIZE / 2 / this.rate;
             this.port.postMessage({
                 t,
                 hz: p?.hz ?? 0,
                 clarity: p?.clarity ?? 0,
+                level: Math.sqrt(energy / HOP),
             });
             this.frame.copyWithin(0, HOP);
             this.filled = SIZE - HOP;
