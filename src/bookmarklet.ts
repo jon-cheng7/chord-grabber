@@ -1,7 +1,10 @@
 // Desktop bookmarklet: reads the open chord page and hands it to this site
 
 export interface Received {
+    /** the page as it stands */
     data: string;
+    /** the page as served, '' if the fetch failed */
+    page: string;
     title: string;
     url: string;
 }
@@ -9,22 +12,21 @@ export interface Received {
 const READY = 'cg-ready';
 const SHEET = 'cg-sheet';
 const PING_MS = 200;
-const GIVE_UP_MS = 4000;
+const GIVE_UP_MS = 8000;
 
-/** runs on the chord page: UG's data or the page text, also copied in case the tab handoff fails */
+/** runs on the chord page: the live page and a fresh copy, also copied in case the handoff fails */
 function source(app: string): string {
     return `(() => {
 const app = ${JSON.stringify(app)};
-const store = document.querySelector('.js-store');
-const data = store ? store.getAttribute('data-content') : document.body.innerText;
-const payload = { type: ${JSON.stringify(SHEET)}, data, title: document.title, url: location.href };
+const data = document.documentElement.outerHTML;
 try { navigator.clipboard.writeText(data).catch(() => {}); } catch (e) {}
 const tab = window.open(app + '/#receive', '_blank');
 if (!tab) return;
+const page = fetch(location.href, { credentials: 'include' }).then((r) => r.text()).catch(() => '');
 const on = (e) => {
     if (e.origin !== app || e.data !== ${JSON.stringify(READY)}) return;
-    tab.postMessage(payload, app);
     removeEventListener('message', on);
+    page.then((page) => tab.postMessage({ type: ${JSON.stringify(SHEET)}, data, page, title: document.title, url: location.href }, app));
 };
 addEventListener('message', on);
 setTimeout(() => removeEventListener('message', on), 15000);
@@ -61,6 +63,7 @@ export function receive(): Promise<Received | null> {
                 return;
             done({
                 data: d.data,
+                page: typeof d.page === 'string' ? d.page : '',
                 title: String(d.title ?? ''),
                 url: String(d.url ?? ''),
             });

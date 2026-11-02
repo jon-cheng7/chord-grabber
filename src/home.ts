@@ -209,7 +209,7 @@ function computer(): HTMLElement {
     }
     card.append(
         steps([
-            ['Open the song’s chord page', 'Ultimate Guitar works best.'],
+            ['Open the song’s chord page', 'Most chord sites work.'],
             [`Click Chord Grabber in your ${BAR[b]}`, BLOCKED[b] ?? ''],
             [
                 'It opens here in a new tab',

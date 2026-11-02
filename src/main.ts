@@ -18,6 +18,7 @@ import {
     textSize,
     type Saved,
 } from './store.ts';
+import { extractSong, looksLikeHtml } from './extract.ts';
 import { readUltimateGuitar, type SongSource } from './ug.ts';
 
 const MIN_SIZE = 12;
@@ -47,9 +48,13 @@ function button(
     return node;
 }
 
-/** UG data first, then plain chords over lyrics */
+const page = (html: string): Document =>
+    new DOMParser().parseFromString(html, 'text/html');
+
+/** a whole page, UG data, or plain chords over lyrics */
 function fromText(text: string, pageTitle = ''): SongSource | null {
     if (!text.trim()) return null;
+    if (looksLikeHtml(text)) return extractSong(page(text));
     const ug = readUltimateGuitar(text);
     if (ug) return ug;
     // "Song Chords by Artist | Site" → "Song Chords by Artist"
@@ -62,6 +67,19 @@ function fromText(text: string, pageTitle = ''): SongSource | null {
         sheet: text,
         url: null,
     };
+}
+
+/** bookmarklet: UG's data is only in the served page, some sites build theirs live */
+function fromPages(
+    live: string,
+    served: string,
+    url: string,
+): SongSource | null {
+    const docs = [page(live), ...(served ? [page(served)] : [])];
+    const store = docs.find((d) => d.querySelector('.js-store'));
+    const first = store ?? docs[0]!;
+    const next = docs.find((d) => d !== first);
+    return extractSong(first, url) ?? (next ? extractSong(next, url) : null);
 }
 
 function open(source: SongSource): void {
@@ -183,8 +201,8 @@ function route(): void {
         app.dataset.view = 'load';
         renderReceiving(app);
         void receive().then((got) => {
-            const source = got && fromText(got.data, got.title);
-            if (source) open({ ...source, url: source.url ?? got.url });
+            const source = got && fromPages(got.data, got.page, got.url);
+            if (source) open(source);
             // cut off from the opener: the bookmarklet copied it too
             else showLoad();
         });
