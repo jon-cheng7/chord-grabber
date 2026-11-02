@@ -14,6 +14,7 @@ import { leave, renderSong } from './song.ts';
 import {
     markConnected,
     save,
+    setArrangement,
     setEdits,
     setShift,
     song,
@@ -133,8 +134,14 @@ function route(): void {
             const saved = save(got.source);
             setShift(saved.id, got.shift);
             setEdits(saved.id, got.edits);
+            setArrangement(saved.id, got.arrangement);
             history.replaceState(null, '', `#song=${saved.id}`);
-            showSong({ ...saved, shift: got.shift, edits: got.edits });
+            showSong({
+                ...saved,
+                shift: got.shift,
+                edits: got.edits,
+                arrangement: got.arrangement,
+            });
         });
         return;
     }

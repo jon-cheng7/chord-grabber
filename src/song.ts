@@ -2,11 +2,13 @@
 
 import { popIn, popOut, slideClosed, slideOpen } from './animate.ts';
 import { holdChord, playChords, resetVoicing, stopHeld } from './audio.ts';
+import { findSections } from './arrange.ts';
+import { openEditor, sheetText } from './editor.ts';
+import { closeArranger, openArranger } from './arranger.ts';
 import { closeChooser, openChooser } from './chooser.ts';
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
 import {
-    applyEdits,
     chordAt,
     passing,
     passingGaps,
@@ -16,10 +18,19 @@ import {
     type OptionGroup,
 } from './reharm.ts';
 import { renderSheet } from './render.ts';
+import {
+    buildView,
+    compact,
+    type Compact,
+    type Step,
+    type View as SheetView,
+} from './view.ts';
 import { makeLink, sendLink } from './share.ts';
 import {
     pref,
+    setArrangement,
     setEdits,
+    updateSheet,
     setPref,
     setShift,
     setTextSize,
@@ -30,6 +41,7 @@ import {
     firstChord,
     keyDistance,
     shiftKey,
+    simplifyChord,
     simplifyLines,
     transposeChord,
     transposeLines,
@@ -116,7 +128,6 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     let edits: Edit[] = s.edits ?? [];
     // edits are kept in the written key, so transposing moves them too
     const writtenFlats = written ? usesFlats(written, 0) : false;
-    const edited = (): readonly Line[] => applyEdits(lines, edits);
     const flatsNow = (): boolean =>
         written ? usesFlats(written, shift) : false;
     const show = (name: string): string =>
@@ -124,11 +135,36 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const store = (name: string): string =>
         transposeChord(name, -shift, writtenFlats);
 
-    const shown = (): readonly Line[] => {
-        const moved = transposeLines(edited(), shift, flatsNow());
+    // arrangement: the sheet's sections in your order, null for as written
+    const sections = findSections(lines);
+    const arrangeable = sections.library.length >= 2;
+    let order: string[] | null = s.arrangement ?? null;
+    /** arranged and reharmed; repeats written out so each can be reharmed */
+    const current = (): SheetView =>
+        buildView(
+            lines,
+            arrangeable ? sections : null,
+            order ?? sections.order,
+            edits,
+        );
+    const display = (ls: readonly Line[]): readonly Line[] => {
+        const moved = transposeLines(ls, shift, flatsNow());
         // reharm shows the chords as they are, to edit them
         return simple && !reharm ? simplifyLines(moved) : moved;
     };
+    /** a chord name as it sounds now */
+    const heard = (name: string): string =>
+        simple && !reharm ? simplifyChord(show(name)) : show(name);
+    const shown = (): readonly Line[] => display(current().lines);
+    /** a chord's place as drawn: row:piece */
+    const shownAt = (target: Element): string | null =>
+        target.closest('.cg-chord')?.closest<HTMLElement>('[data-at]')?.dataset
+            .at ?? null;
+    const parseAt = (at: string | undefined): [number, number] => {
+        const [row = 0, piece = 0] = (at ?? '').split(':').map(Number);
+        return [row, piece];
+    };
+
     const keyLabel = (): string => {
         const sign = shift > 0 ? '+' : '−';
         const offset = shift ? ` ${sign}${Math.abs(shift)}` : '';
@@ -187,7 +223,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                 },
                 {
                     label: 'Print',
-                    pick: () => printSong(s, renderSheet(shown()), keyLabel()),
+                    pick: () =>
+                        printSong(s, renderSheet(shown()), keyLabel()),
                 },
             ],
         },
@@ -204,6 +241,15 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                         setPref('cg-simple', simple);
                         draw();
                     },
+                },
+            ],
+        },
+        {
+            label: 'SONG',
+            items: [
+                {
+                    label: 'Edit lyrics & chords',
+                    pick: () => editSheet(),
                 },
             ],
         },
@@ -256,6 +302,42 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         'cg-tools-clear',
     );
     tools.append(reharmBtn, hint, clear);
+
+    // the arrangement, always in view; tap to change it
+    const orderBar = button('', () => openOrder(), 'cg-order');
+    orderBar.setAttribute('aria-label', 'Arrange the song');
+    orderBar.hidden = !arrangeable;
+    const syncOrder = (playing = -1): void => {
+        const ids = order ?? sections.order;
+        orderBar.replaceChildren(
+            el('span', 'cg-order-label', order ? 'ARRANGED' : 'ORDER'),
+            ...ids.map((id, i) => {
+                const tag = el(
+                    'span',
+                    'cg-order-tag',
+                    sections.library.find((x) => x.id === id)?.short ?? '?',
+                );
+                if (i === playing) tag.classList.add('cg-on');
+                return tag;
+            }),
+            el('span', 'cg-order-edit', 'EDIT'),
+        );
+    };
+    const openOrder = (): void =>
+        openArranger({
+            library: sections.library,
+            order: order ?? sections.order,
+            original: sections.order,
+            done: (next) => {
+                const same = next.join() === sections.order.join();
+                order = same ? null : next;
+                setArrangement(s.id, order);
+                if (stepping) stopStep();
+                draw();
+                relink();
+                toast(same ? 'Back to the original order' : 'Arranged');
+            },
+        });
     const syncTools = (): void => {
         reharmBtn.classList.toggle('cg-on', reharm);
         reharmBtn.setAttribute('aria-pressed', String(reharm));
@@ -389,11 +471,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         }
         if (reharm && tapReharm(e.target as Element)) return;
         // tapping a chord plays from there
-        const chord = (e.target as Element)
-            .closest('.cg-chord')
-            ?.closest<HTMLElement>('[data-at]');
-        if (!reharm && chord?.dataset.at) {
-            startStep(chord.dataset.at);
+        const at = shownAt(e.target as Element);
+        if (!reharm && at) {
+            startStep(at);
             return;
         }
         if (view !== 'pages') return;
@@ -426,6 +506,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     addEventListener('keydown', keys);
     addEventListener('resize', resize);
     leaveSong = () => {
+        closeArranger();
         stopHeld();
         app.classList.remove('cg-has-stepbar');
         stepBar.remove();
@@ -434,11 +515,17 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         removeEventListener('resize', resize);
     };
 
+    // playing draws each different section once and jumps back for repeats
+    let packed: Compact | null = null;
     const draw = (): void => {
-        sheet.replaceChildren(renderSheet(shown()));
+        packed = stepping ? compact(current()) : null;
+        sheet.replaceChildren(
+            renderSheet(packed ? display(packed.lines) : shown()),
+        );
         sheet.classList.toggle('cg-reharm', reharm);
         syncTools();
-        if (reharm) decorate();
+        syncOrder(stepping ? (steps()[cursor]?.block ?? -1) : -1);
+        if (reharm && !stepping) decorate();
         if (stepping) mark();
         keyText.textContent = keyLabel();
         fillPicker();
@@ -451,29 +538,37 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         draw();
         relink();
     };
-    const setAt = (line: number, piece: number, chord: string | null) => {
-        const original = chordAt(lines, line, piece);
-        const rest = edits.filter((e) => e.line !== line || e.piece !== piece);
+    /** row:piece as drawn; the edit belongs to that time round the section */
+    const setAt = (row: number, piece: number, chord: string | null) => {
+        const v = current();
+        const line = v.origin[row] ?? -1;
+        if (line < 0) return;
+        const occ = v.occ[row] ?? 0;
+        const original = chordAt(v.raw, row, piece);
+        const here = (e: Edit): boolean =>
+            e.line === line && e.piece === piece;
+        const rest = edits.filter((e) => !(here(e) && e.occ === occ));
+        const everyTime = rest.some((e) => here(e) && e.occ === undefined);
         // back to the sheet's own chord: no edit needed
-        if (chord === original) saveEdits(rest);
+        if (chord === original && !everyTime) saveEdits(rest);
         else
             saveEdits([
                 ...rest,
                 original === null
-                    ? { line, piece, chord, added: true }
-                    : { line, piece, chord },
+                    ? { line, piece, chord, occ, added: true }
+                    : { line, piece, chord, occ },
             ]);
     };
     const neighbours = (
-        line: number,
+        row: number,
         piece: number,
     ): [string | null, string | null] => {
-        const all = spots(edited());
+        const all = spots(current().lines);
         const earlier = (x: { line: number; piece: number }): boolean =>
-            x.line < line || (x.line === line && x.piece < piece);
+            x.line < row || (x.line === row && x.piece < piece);
         const before = all.filter(earlier).pop();
         const after = all.find(
-            (x) => !earlier(x) && (x.line !== line || x.piece !== piece),
+            (x) => !earlier(x) && (x.line !== row || x.piece !== piece),
         );
         return [before?.chord ?? null, after?.chord ?? null];
     };
@@ -483,34 +578,46 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             options: g.options.map((o) => ({ ...o, chord: show(o.chord) })),
         }));
     let gaps: ReturnType<typeof passingGaps> = [];
+    const slotAt = (row: number, piece: number): Element | null => {
+        const node = sheet.querySelector(`[data-at="${row}:${piece}"]`);
+        if (!node) return null;
+        // a lyric word's chord slot, or the spot itself in a chord line
+        return node.classList.contains('cg-chord') ||
+            node.classList.contains('cg-filler')
+            ? node
+            : node.querySelector('.cg-chord');
+    };
     const decorate = (): void => {
-        for (const e of edits) {
-            const node = sheet.querySelector(`[data-at="${e.line}:${e.piece}"]`);
-            const chord = node?.classList.contains('cg-chord')
-                ? node
-                : node?.querySelector('.cg-chord');
-            chord?.classList.add(e.added ? 'cg-chord-added' : 'cg-chord-edited');
+        const v = current();
+        // compare against the sheet as written: changed, added, removed
+        const was = new Map(
+            spots(v.raw).map((x) => [`${x.line}:${x.piece}`, x.chord]),
+        );
+        const now = new Map(
+            spots(v.lines).map((x) => [`${x.line}:${x.piece}`, x.chord]),
+        );
+        for (const [at, chord] of now) {
+            const before = was.get(at);
+            if (before === chord) continue;
+            const [row, piece] = parseAt(at);
+            slotAt(row, piece)?.classList.add(
+                before ? 'cg-chord-edited' : 'cg-chord-added',
+            );
         }
-        for (const e of edits) {
-            if (e.chord !== null || e.added) continue;
-            const original = chordAt(lines, e.line, e.piece);
-            const node = sheet.querySelector(`[data-at="${e.line}:${e.piece}"]`);
-            // a lyric word's chord slot, or the emptied spot in a chord line
-            const slot = node?.classList.contains('cg-filler')
-                ? node
-                : node?.querySelector('.cg-chord');
-            if (!original || !slot || slot.textContent) continue;
-            const ghost = el('button', 'cg-ghost', show(original));
+        for (const [at, chord] of was) {
+            if (now.has(at)) continue;
+            const [row, piece] = parseAt(at);
+            const slot = slotAt(row, piece);
+            if (!slot || slot.textContent) continue;
+            const ghost = el('button', 'cg-ghost', show(chord));
             ghost.type = 'button';
-            ghost.dataset.at = `${e.line}:${e.piece}`;
-            ghost.setAttribute('aria-label', `Bring back ${show(original)}`);
+            ghost.dataset.at = at;
+            ghost.setAttribute('aria-label', `Bring back ${show(chord)}`);
             slot.append(ghost);
         }
-        gaps = passingGaps(edited(), written, writtenFlats);
+        gaps = passingGaps(v.lines, written, writtenFlats);
         for (const g of gaps) {
-            const slot = sheet.querySelector(
-                `[data-at="${g.line}:${g.piece}"] .cg-chord`,
-            );
+            const slot = slotAt(g.line, g.piece);
             if (!slot || slot.textContent) continue;
             const plus = el('button', 'cg-gap', '+');
             plus.type = 'button';
@@ -520,32 +627,29 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         }
     };
     const tapReharm = (target: Element): boolean => {
+        const v = current();
         // a removed chord, shown faintly: tap to bring it back
         const ghost = target.closest<HTMLElement>('.cg-ghost');
         if (ghost) {
-            const [line = 0, piece = 0] = (ghost.dataset.at ?? '')
-                .split(':')
-                .map(Number);
-            const original = chordAt(lines, line, piece);
+            const [row, piece] = parseAt(ghost.dataset.at);
+            const original = chordAt(v.raw, row, piece);
             if (original) {
-                setAt(line, piece, original);
+                setAt(row, piece, original);
                 playChords([show(original)]);
             }
             return true;
         }
         const plus = target.closest<HTMLElement>('.cg-gap');
         if (plus) {
-            const [line = 0, piece = 0] = (plus.dataset.gap ?? '')
-                .split(':')
-                .map(Number);
-            const g = gaps.find((x) => x.line === line && x.piece === piece);
+            const [row, piece] = parseAt(plus.dataset.gap);
+            const g = gaps.find((x) => x.line === row && x.piece === piece);
             if (!g) return true;
             openChooser({
                 title: `Passing chord: ${show(g.from)} → ${show(g.to)}`,
                 current: null,
                 groups: showGroups([{ label: 'TRY', options: g.options }]),
                 hear: (c) => playChords([c]),
-                choose: (c) => setAt(line, piece, store(c)),
+                choose: (c) => setAt(row, piece, store(c)),
             });
             return true;
         }
@@ -553,10 +657,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             .closest('.cg-chord, .cg-words, .cg-plain')
             ?.closest<HTMLElement>('[data-at]');
         if (!node) return false;
-        const [line = 0, piece = 0] = (node.dataset.at ?? '')
-            .split(':')
-            .map(Number);
-        const now = chordAt(edited(), line, piece);
+        const [row, piece] = parseAt(node.dataset.at);
+        const now = chordAt(v.lines, row, piece);
         if (!now) {
             // a bare word: your own chord only, no suggestions
             const word = node.textContent?.trim();
@@ -566,13 +668,13 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                 current: null,
                 groups: [],
                 hear: (c) => playChords([c]),
-                choose: (c) => setAt(line, piece, store(c)),
+                choose: (c) => setAt(row, piece, store(c)),
             });
             return true;
         }
-        const original = chordAt(lines, line, piece);
+        const original = chordAt(v.raw, row, piece);
         // an added chord stays a passing chord: only passing options
-        const [before, after] = neighbours(line, piece);
+        const [before, after] = neighbours(row, piece);
         const pass =
             original === null && before && after
                 ? passing(before, after, written, writtenFlats)
@@ -589,12 +691,12 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                       suggestFor(original ?? now, written, writtenFlats),
             ),
             hear: (c) => playChords([c]),
-            choose: (c) => setAt(line, piece, store(c)),
+            choose: (c) => setAt(row, piece, store(c)),
             revert:
                 original && original !== now
-                    ? () => setAt(line, piece, original)
+                    ? () => setAt(row, piece, original)
                     : undefined,
-            remove: () => setAt(line, piece, null),
+            remove: () => setAt(row, piece, null),
         });
         return true;
     };
@@ -614,9 +716,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         button('▶', () => go(cursor + 1), 'cg-icon'),
         button('■', () => stopStep(), 'cg-icon'),
     );
-    const steps = () => spots(shown());
-    const nodeAt = (line: number, piece: number): Element | null => {
-        const node = sheet.querySelector(`[data-at="${line}:${piece}"]`);
+    const steps = (): Step[] => packed?.steps ?? [];
+    const nodeAt = (row: number, piece: number): Element | null => {
+        const node = sheet.querySelector(`[data-at="${row}:${piece}"]`);
         return node?.classList.contains('cg-chord')
             ? node
             : (node?.querySelector('.cg-chord') ?? null);
@@ -624,7 +726,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const mark = (): void => {
         sheet.querySelector('.cg-now')?.classList.remove('cg-now');
         const at = steps()[cursor];
-        if (at) nodeAt(at.line, at.piece)?.classList.add('cg-now');
+        if (at) nodeAt(at.row, at.piece)?.classList.add('cg-now');
     };
     const follow = (node: Element): void => {
         if (view === 'pages') {
@@ -645,17 +747,28 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         if (!list.length) return;
         cursor = Math.min(list.length - 1, Math.max(0, i));
         const at = list[cursor]!;
-        holdChord(at.chord);
+        holdChord(heard(at.chord));
         mark();
-        nowName.textContent = at.chord;
-        nextName.textContent = list[cursor + 1]
-            ? `then ${list[cursor + 1]!.chord}`
-            : 'end';
-        const node = nodeAt(at.line, at.piece);
+        syncOrder(at.block);
+        nowName.textContent = heard(at.chord);
+        const after = list[cursor + 1];
+        nextName.textContent = after ? `then ${heard(after.chord)}` : 'end';
+        const node = nodeAt(at.row, at.piece);
         if (node) follow(node);
     };
-    /** at: a line:piece to start from, else the first chord on screen */
+    /** at: a chord's row:piece in the full sheet, else the first on screen */
     const startStep = (at?: string): void => {
+        const from =
+            at ??
+            [...sheet.querySelectorAll<HTMLElement>('[data-at]')].find((n) => {
+                const r = n.getBoundingClientRect();
+                return (
+                    n.querySelector('.cg-chord')?.textContent?.trim() &&
+                    r.top > 0 &&
+                    r.left >= 0 &&
+                    r.right <= innerWidth
+                );
+            })?.dataset.at;
         stepping = true;
         closeChooser();
         resetVoicing();
@@ -664,39 +777,42 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         sheet.classList.add('cg-stepping');
         popIn(stepBar);
         app.classList.add('cg-has-stepbar');
-        if (view === 'pages') layout();
-        const list = steps();
-        const first = at
-            ? list.findIndex((x) => `${x.line}:${x.piece}` === at)
-            : list.findIndex((x) => {
-                  const r = nodeAt(x.line, x.piece)?.getBoundingClientRect();
-                  return r && r.top > 0 && r.left >= 0 && r.right <= innerWidth;
-              });
+        draw();
+        const [row, piece] = parseAt(from);
+        const first = from
+            ? steps().findIndex((x) => x.src === row && x.piece === piece)
+            : 0;
         go(Math.max(0, first));
     };
     const stopStep = (): void => {
+        const at = steps()[cursor];
         stepping = false;
         stopHeld();
         playBtn.innerHTML = PLAY_ICON;
         playBtn.setAttribute('aria-label', 'Play the chords');
         sheet.classList.remove('cg-stepping');
-        sheet.querySelector('.cg-now')?.classList.remove('cg-now');
+        draw();
+        // back in the full sheet, at the copy that was playing
+        if (at) {
+            const node = sheet.querySelector(`[data-at="${at.src}:${at.piece}"]`);
+            if (node) follow(node);
+        }
         popOut(stepBar, () => {
             app.classList.remove('cg-has-stepbar');
             if (view === 'pages') layout();
         });
     };
-    /** a chord jumps there, anywhere else is next */
+    /** a chord jumps there (its next time round), anywhere else is next */
     const tapStep = (target: Element): void => {
-        const node = target
-            .closest('.cg-chord')
-            ?.closest<HTMLElement>('[data-at]');
-        if (node?.dataset.at) {
-            const [line, piece] = node.dataset.at.split(':').map(Number);
-            const i = steps().findIndex(
-                (x) => x.line === line && x.piece === piece,
-            );
-            if (i >= 0) {
+        const at = shownAt(target);
+        if (at) {
+            const [row, piece] = parseAt(at);
+            const list = steps();
+            const hits = list
+                .map((x, i) => (x.row === row && x.piece === piece ? i : -1))
+                .filter((i) => i >= 0);
+            const i = hits.find((x) => x > cursor) ?? hits[0];
+            if (i !== undefined) {
                 go(i);
                 return;
             }
@@ -704,11 +820,32 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         go(cursor + 1);
     };
 
+    const editSheet = (): void =>
+        openEditor({
+            text: sheetText(lines),
+            save: (text) => {
+                const next = parseSheet(text);
+                // keep reharm on lines that didn't change; sections must still exist
+                const same = (i: number): boolean =>
+                    JSON.stringify(lines[i]) === JSON.stringify(next[i]);
+                const kept = edits.filter((e) => same(e.line));
+                const ids = new Set(
+                    findSections(next).library.map((x) => x.id),
+                );
+                const keepOrder = order?.every((id) => ids.has(id))
+                    ? order
+                    : null;
+                const updated = updateSheet(s.id, text, kept, keepOrder);
+                if (updated) renderSong(app, updated);
+                toast('Saved');
+            },
+        });
+
     let link = '';
     const relink = (): void => {
         link = '';
         const at = shift;
-        void makeLink(s, at, edits).then((made) => {
+        void makeLink(s, at, edits, order).then((made) => {
             if (at === shift) link = made;
         });
     };
@@ -721,7 +858,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         relink();
     };
 
-    app.append(bar, key, tools, picker, sheet, pager, stepBar);
+    app.append(bar, key, tools, orderBar, picker, sheet, pager, stepBar);
     draw();
     relink();
     layout();

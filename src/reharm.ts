@@ -11,6 +11,8 @@ export interface Edit {
     chord: string | null;
     /** inserted where there was no chord */
     added?: boolean;
+    /** only this time round the section; absent for every time */
+    occ?: number;
 }
 
 export interface Option {

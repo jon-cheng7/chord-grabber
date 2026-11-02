@@ -7,6 +7,7 @@ export interface Shared {
     source: SongSource;
     shift: number;
     edits: Edit[];
+    arrangement: string[] | null;
 }
 
 async function squeeze(text: string): Promise<string> {
@@ -33,10 +34,21 @@ export async function makeLink(
     song: SongSource,
     shift: number,
     edits: readonly Edit[],
+    arrangement: readonly string[] | null,
 ): Promise<string> {
     const { title, artist, key, capo, sheet, url } = song;
     const data = await squeeze(
-        JSON.stringify({ title, artist, key, capo, sheet, url, shift, edits }),
+        JSON.stringify({
+            title,
+            artist,
+            key,
+            capo,
+            sheet,
+            url,
+            shift,
+            edits,
+            arrangement,
+        }),
     );
     return `${location.origin}${location.pathname}#s=${data}`;
 }
@@ -87,7 +99,11 @@ export async function sendLink(
 export async function readShared(data: string): Promise<Shared | null> {
     try {
         const o = JSON.parse(await unsqueeze(data)) as Partial<
-            SongSource & { shift: number; edits: Edit[] }
+            SongSource & {
+                shift: number;
+                edits: Edit[];
+                arrangement: string[] | null;
+            }
         >;
         if (typeof o.sheet !== 'string') return null;
         return {
@@ -101,6 +117,9 @@ export async function readShared(data: string): Promise<Shared | null> {
             },
             shift: typeof o.shift === 'number' ? o.shift : 0,
             edits: Array.isArray(o.edits) ? o.edits : [],
+            arrangement: Array.isArray(o.arrangement)
+                ? o.arrangement.map(String)
+                : null,
         };
     } catch {
         return null;

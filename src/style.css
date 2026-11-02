@@ -1209,3 +1209,227 @@ body {
 .cg-chooser-foot .cg-btn:disabled {
     opacity: 0.35;
 }
+
+/* Arrange */
+
+/* the order, always on screen: tap to change */
+.cg-order {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    margin: 0.5rem 0 0;
+    padding: 0.45rem 0.6rem;
+    overflow-x: auto;
+    border: 1px solid var(--cg-line);
+    border-radius: 10px;
+    background: none;
+    color: var(--cg-fg);
+    text-align: left;
+    white-space: nowrap;
+    scrollbar-width: none;
+}
+
+.cg-order[hidden] {
+    display: none;
+}
+
+.cg-order-label,
+.cg-order-edit {
+    flex: none;
+    color: var(--cg-muted);
+    font: 400 0.65rem var(--cg-mono);
+    letter-spacing: 0.14em;
+}
+
+.cg-order-edit {
+    margin-left: auto;
+    padding-left: 0.4rem;
+}
+
+.cg-order-tag {
+    flex: none;
+    padding: 0.15rem 0.4rem;
+    border-radius: 6px;
+    background: #161616;
+    font: 600 0.8rem var(--cg-mono);
+}
+
+.cg-order-tag.cg-on {
+    background: var(--cg-accent);
+    color: #0a0a0a;
+}
+
+.cg-arrange-strip {
+    margin: 0.4rem 0 0;
+    color: var(--cg-accent);
+    font: 600 0.85rem var(--cg-mono);
+    letter-spacing: 0.06em;
+    word-spacing: 0.3em;
+}
+
+.cg-section-chip .cg-chip-name {
+    color: var(--cg-fg);
+}
+
+.cg-arrange-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.cg-arrange-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+    padding: 0 0 0 0.2rem;
+    border: 1px solid var(--cg-line);
+    border-radius: 10px;
+    background: var(--cg-panel);
+    overflow: hidden;
+}
+
+.cg-arrange-row.cg-dragging {
+    position: relative;
+    z-index: 1;
+    border-color: var(--cg-accent);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* the handle drags; the page mustn't scroll under the finger */
+.cg-arrange-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    min-height: 2.75rem;
+    color: var(--cg-muted);
+    letter-spacing: -0.2em;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.cg-dragging .cg-arrange-handle {
+    cursor: grabbing;
+}
+
+.cg-arrange-names {
+    display: flex;
+    flex: 1;
+    align-items: baseline;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.cg-arrange-short {
+    min-width: 2.2rem;
+    color: var(--cg-accent);
+    font: 600 0.95rem var(--cg-mono);
+}
+
+.cg-arrange-label {
+    overflow: hidden;
+    color: var(--cg-muted);
+    font-size: 0.85rem;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.cg-arrange-drop {
+    border: 0;
+    background: none;
+    color: var(--cg-muted);
+}
+
+.cg-arrange-empty {
+    margin: 0.4rem 0;
+    color: var(--cg-muted);
+    font-size: 0.85rem;
+}
+
+.cg-arrange-empty[hidden] {
+    display: none;
+}
+
+/* bottom sheets: head and buttons stay put, the middle scrolls */
+.cg-chooser {
+    display: flex;
+    flex-direction: column;
+    max-height: 80dvh;
+    overflow: hidden;
+}
+
+.cg-chooser-head,
+.cg-chooser-foot,
+.cg-arrange-strip {
+    flex: none;
+}
+
+.cg-chooser-list {
+    flex: 1;
+    min-height: 0;
+    margin: 0 calc(-1 * var(--cg-pad));
+    padding: 0 var(--cg-pad) 0.5rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.cg-chooser-foot {
+    margin: 0;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--cg-line);
+}
+
+/* Lyrics editor: the whole screen */
+
+.cg-editor {
+    position: fixed;
+    inset: 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    padding: calc(0.6rem + env(safe-area-inset-top)) var(--cg-pad)
+        calc(0.6rem + env(safe-area-inset-bottom));
+    background: var(--cg-bg);
+}
+
+.cg-editor[hidden] {
+    display: none;
+}
+
+.cg-editor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+}
+
+.cg-editor-head .cg-btn:disabled {
+    opacity: 0.35;
+}
+
+.cg-editor-help {
+    margin: 0.6rem 0;
+    color: var(--cg-muted);
+    font-size: 0.8rem;
+}
+
+/* 16px: iOS zooms into smaller inputs */
+.cg-editor-text {
+    flex: 1;
+    width: 100%;
+    padding: 0.8rem;
+    border: 1px solid var(--cg-line);
+    border-radius: 10px;
+    background: #0d0d0d;
+    color: var(--cg-fg);
+    font: 16px/1.45 var(--cg-mono);
+    resize: none;
+}
+
+.cg-editor-text:focus {
+    border-color: var(--cg-accent);
+    outline: none;
+}

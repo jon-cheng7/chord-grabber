@@ -22,9 +22,17 @@ function piece(p: Piece, at: string): HTMLElement {
     return node;
 }
 
-export function renderSheet(lines: readonly Line[]): DocumentFragment {
+/**
+ * origin: each line's place in the unarranged sheet, which data-at uses,
+ * while data-row counts lines as shown
+ */
+export function renderSheet(
+    lines: readonly Line[],
+    origin?: readonly number[],
+): DocumentFragment {
     const out = document.createDocumentFragment();
-    lines.forEach((line, i) => {
+    lines.forEach((line, row) => {
+        const i = origin?.[row] ?? row;
         switch (line.kind) {
             case 'section':
                 out.append(el('h2', 'cg-section', line.label));
@@ -36,22 +44,24 @@ export function renderSheet(lines: readonly Line[]): DocumentFragment {
                 out.append(el('pre', 'cg-tab', line.text));
                 break;
             case 'chords': {
-                const row = el('div', 'cg-line cg-line-chords');
+                const box = el('div', 'cg-line cg-line-chords');
+                box.dataset.row = String(row);
                 line.items.forEach((item, k) => {
                     const node = item.chord
                         ? el('span', 'cg-chord', item.chord)
                         : el('span', 'cg-filler', item.text);
                     node.dataset.at = `${i}:${k}`;
-                    row.append(node);
+                    box.append(node);
                 });
-                out.append(row);
+                out.append(box);
                 break;
             }
             case 'lyric': {
-                const row = el(
+                const box = el(
                     'div',
                     line.chords ? 'cg-line cg-line-paired' : 'cg-line',
                 );
+                box.dataset.row = String(row);
                 let k = 0;
                 for (const unit of line.units) {
                     const group = el('span', 'cg-unit');
@@ -66,9 +76,9 @@ export function renderSheet(lines: readonly Line[]): DocumentFragment {
                         word.dataset.at = at;
                         group.append(word);
                     }
-                    row.append(group);
+                    box.append(group);
                 }
-                out.append(row);
+                out.append(box);
                 break;
             }
         }

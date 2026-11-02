@@ -10,6 +10,8 @@ export interface Saved extends SongSource {
     shift?: number;
     /** reharm changes, in the key the sheet is written in */
     edits?: Edit[];
+    /** section ids in playing order; absent for the sheet's own */
+    arrangement?: string[] | null;
 }
 
 const SONGS = 'cg-songs';
@@ -59,6 +61,7 @@ export function save(source: SongSource): Saved {
         added: Date.now(),
         shift: old?.shift,
         edits: old?.edits,
+        arrangement: old?.arrangement,
     };
     const rest = songs().filter((s) => s.id !== id);
     write(SONGS, [saved, ...rest].slice(0, MAX_SONGS));
@@ -69,6 +72,32 @@ export function setShift(id: string, shift: number): void {
     write(
         SONGS,
         songs().map((s) => (s.id === id ? { ...s, shift } : s)),
+    );
+}
+
+/** new sheet text, keeping what still fits */
+export function updateSheet(
+    id: string,
+    sheet: string,
+    edits: Edit[],
+    arrangement: string[] | null,
+): Saved | null {
+    let updated: Saved | null = null;
+    write(
+        SONGS,
+        songs().map((s) => {
+            if (s.id !== id) return s;
+            updated = { ...s, sheet, edits, arrangement };
+            return updated;
+        }),
+    );
+    return updated;
+}
+
+export function setArrangement(id: string, order: string[] | null): void {
+    write(
+        SONGS,
+        songs().map((s) => (s.id === id ? { ...s, arrangement: order } : s)),
     );
 }
 
