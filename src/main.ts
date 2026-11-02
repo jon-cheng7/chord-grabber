@@ -1,21 +1,25 @@
-// Routes: home (paste, saved songs) and a song sheet
+// Routes: home, the Shortcut's load screen, a song sheet
 
 import './style.css';
+import { receive } from './bookmarklet.ts';
+import {
+    renderHome,
+    renderLoad,
+    renderReceiving,
+    type HomeActions,
+} from './home.ts';
 import { parseSheet } from './parse.ts';
 import { renderSheet } from './render.ts';
 import {
-    remove,
+    markConnected,
     save,
     setTextSize,
     song,
-    songs,
     textSize,
     type Saved,
 } from './store.ts';
 import { readUltimateGuitar, type SongSource } from './ug.ts';
 
-/** iCloud link to the iPhone Shortcut, once it exists */
-const SHORTCUT_URL = '';
 const MIN_SIZE = 12;
 const MAX_SIZE = 30;
 
@@ -44,12 +48,14 @@ function button(
 }
 
 /** UG data first, then plain chords over lyrics */
-function fromText(text: string): SongSource | null {
+function fromText(text: string, pageTitle = ''): SongSource | null {
     if (!text.trim()) return null;
     const ug = readUltimateGuitar(text);
     if (ug) return ug;
+    // "Song Chords by Artist | Site" → "Song Chords by Artist"
+    const title = pageTitle.split(/\s+[|–—-]\s+/)[0]?.trim();
     return {
-        title: 'Pasted song',
+        title: title || 'Pasted song',
         artist: '',
         key: null,
         capo: null,
@@ -60,91 +66,44 @@ function fromText(text: string): SongSource | null {
 
 function open(source: SongSource): void {
     const saved = save(source);
-    location.hash = `song=${saved.id}`;
+    // from the load screen, back should skip it
+    if (location.hash === '#clip' || location.hash === '#receive') {
+        history.replaceState(null, '', `#song=${saved.id}`);
+        route();
+    } else {
+        location.hash = `song=${saved.id}`;
+    }
 }
+
+const actions: HomeActions = {
+    async pasteClipboard() {
+        try {
+            const source = fromText(await navigator.clipboard.readText());
+            if (source) open(source);
+            return source !== null;
+        } catch {
+            return false;
+        }
+    },
+    showText(text) {
+        const source = fromText(text);
+        if (source) open(source);
+        return source !== null;
+    },
+};
 
 function showHome(notice?: string): void {
     if (!app) return;
     document.title = 'Chord Grabber';
-    app.replaceChildren();
     app.dataset.view = 'home';
+    renderHome(app, actions, notice);
+}
 
-    const head = el('header', 'cg-home-head');
-    head.append(el('h1', 'cg-brand', 'CHORD GRABBER'));
-    app.append(head);
-
-    if (notice) app.append(el('p', 'cg-notice', notice));
-
-    const box = el('section', 'cg-paste');
-    const area = el('textarea', 'cg-paste-area');
-    area.placeholder = 'Paste a chord sheet here';
-    area.rows = 6;
-    area.spellcheck = false;
-    area.autocapitalize = 'off';
-    const actions = el('div', 'cg-paste-actions');
-    const fromClipboard = button('PASTE', () => {
-        void navigator.clipboard
-            ?.readText()
-            .then((text) => {
-                const source = fromText(text);
-                if (source) open(source);
-                else area.focus();
-            })
-            .catch(() => area.focus());
-    });
-    fromClipboard.classList.add('cg-btn-primary');
-    const show = button('SHOW', () => {
-        const source = fromText(area.value);
-        if (source) open(source);
-    });
-    actions.append(fromClipboard, show);
-    box.append(area, actions);
-    app.append(box);
-
-    const list = songs();
-    if (list.length) {
-        const section = el('section', 'cg-recent');
-        section.append(el('h2', 'cg-label', 'SAVED'));
-        const ul = el('ul', 'cg-recent-list');
-        for (const s of list) {
-            const li = el('li', 'cg-recent-item');
-            const link = el('a', 'cg-recent-link');
-            link.href = `#song=${s.id}`;
-            link.append(
-                el('span', 'cg-recent-title', s.title),
-                el('span', 'cg-recent-artist', s.artist),
-            );
-            const del = button(
-                '×',
-                () => {
-                    remove(s.id);
-                    li.remove();
-                },
-                'cg-icon',
-            );
-            del.setAttribute('aria-label', `Remove ${s.title}`);
-            li.append(link, del);
-            ul.append(li);
-        }
-        section.append(ul);
-        app.append(section);
-    }
-
-    if (SHORTCUT_URL) {
-        const tip = el('section', 'cg-shortcut');
-        tip.append(el('h2', 'cg-label', 'IPHONE'));
-        tip.append(
-            el(
-                'p',
-                'cg-hint',
-                'Add the Shortcut, then share any chord page to “Chord Grabber”.',
-            ),
-        );
-        const add = el('a', 'cg-btn', 'ADD SHORTCUT');
-        add.href = SHORTCUT_URL;
-        tip.append(add);
-        app.append(tip);
-    }
+function showLoad(): void {
+    if (!app) return;
+    document.title = 'Chord Grabber';
+    app.dataset.view = 'load';
+    renderLoad(app, actions);
 }
 
 function showSong(s: Saved): void {
@@ -194,6 +153,7 @@ function route(): void {
     const hash = location.hash.slice(1);
     // from the Shortcut: page data rides in the hash, never sent to a server
     if (hash.startsWith('ug=') || hash.startsWith('text=')) {
+        markConnected();
         let text = '';
         try {
             text = decodeURIComponent(hash.slice(hash.indexOf('=') + 1));
@@ -212,7 +172,22 @@ function route(): void {
         return;
     }
     if (hash === 'clip') {
-        showHome('Tap PASTE to load the song from the Shortcut.');
+        markConnected();
+        showLoad();
+        return;
+    }
+    // from the bookmarklet: the opener tab posts the page over
+    if (hash === 'receive') {
+        markConnected();
+        if (!app) return;
+        app.dataset.view = 'load';
+        renderReceiving(app);
+        void receive().then((got) => {
+            const source = got && fromText(got.data, got.title);
+            if (source) open({ ...source, url: source.url ?? got.url });
+            // cut off from the opener: the bookmarklet copied it too
+            else showLoad();
+        });
         return;
     }
     if (hash.startsWith('song=')) {

@@ -67,3 +67,14 @@ export function textSize(): number {
 export function setTextSize(px: number): void {
     write(SIZE, px);
 }
+
+const CONNECTED = 'cg-shortcut';
+
+/** a song has arrived through the Shortcut or bookmarklet on this device */
+export function connected(): boolean {
+    return read<boolean>(CONNECTED, false);
+}
+
+export function markConnected(): void {
+    write(CONNECTED, true);
+}
