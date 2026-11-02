@@ -13,7 +13,7 @@ export interface HomeActions {
 
 /** iCloud link to the iPhone Shortcut */
 export const SHORTCUT_URL =
-    'https://www.icloud.com/shortcuts/75275afaee72489b956b9ee887c6bf76';
+    'https://www.icloud.com/shortcuts/b0b56ca6846549cdb12162f05118f0ca';
 
 const SAMPLE =
     'Am            F         C\nAny chord sheet, sized for your phone';

@@ -68,7 +68,8 @@ function scanPlain(line: string): Scanned {
     const chords: Placed[] = [];
     let words = 0;
     let fillerOnly = true;
-    for (const m of line.matchAll(/\S+/g)) {
+    // bars split off: |C / G / |
+    for (const m of line.matchAll(/[^\s|]+|\|+/g)) {
         words++;
         if (isChord(m[0])) {
             chords.push({ col: m.index, name: m[0] });
@@ -149,6 +150,15 @@ function chordItems(scan: Scanned): Piece[] {
     return items;
 }
 
+function scanLine(line: string, marked: boolean): Scanned {
+    if (!marked) return scanPlain(line);
+    const scan = scanMarked(line);
+    if (scan.chords.length) return scan;
+    // a plain chord line among marked ones
+    const plain = scanPlain(line);
+    return plain.chordOnly ? plain : scan;
+}
+
 export function parseSheet(source: string): Line[] {
     const marked = source.includes('[ch]');
     const raw = source
@@ -176,10 +186,10 @@ export function parseSheet(source: string): Line[] {
             continue;
         }
 
-        const scan = marked ? scanMarked(line) : scanPlain(line);
+        const scan = scanLine(line, marked);
         if (scan.chordOnly) {
             const next = (raw[i + 1] ?? '').replace(/\t/g, '    ').trimEnd();
-            const nextScan = marked ? scanMarked(next) : scanPlain(next);
+            const nextScan = scanLine(next, marked);
             const lyricNext =
                 next.trim() !== '' &&
                 !SECTION.test(next) &&

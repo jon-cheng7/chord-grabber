@@ -5,6 +5,8 @@ import type { SongSource } from './ug.ts';
 export interface Saved extends SongSource {
     id: string;
     added: number;
+    /** semitones the reader moved it */
+    shift?: number;
 }
 
 const SONGS = 'cg-songs';
@@ -47,10 +49,18 @@ export function song(id: string): Saved | null {
 
 export function save(source: SongSource): Saved {
     const id = idFor(source);
-    const saved: Saved = { ...source, id, added: Date.now() };
+    const shift = song(id)?.shift;
+    const saved: Saved = { ...source, id, added: Date.now(), shift };
     const rest = songs().filter((s) => s.id !== id);
     write(SONGS, [saved, ...rest].slice(0, MAX_SONGS));
     return saved;
+}
+
+export function setShift(id: string, shift: number): void {
+    write(
+        SONGS,
+        songs().map((s) => (s.id === id ? { ...s, shift } : s)),
+    );
 }
 
 export function remove(id: string): void {

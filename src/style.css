@@ -595,3 +595,60 @@ body {
     margin: 0;
     text-align: center;
 }
+
+.cg-transpose {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.9rem 0 0;
+}
+
+.cg-key-btn {
+    flex: 1;
+    min-height: 2.75rem;
+    border: 1px solid var(--cg-line);
+    border-radius: 10px;
+    background: none;
+    color: var(--cg-muted);
+    font: 400 0.75rem var(--cg-mono);
+    letter-spacing: 0.12em;
+}
+
+.cg-key-btn:active {
+    background: #1f1f1f;
+}
+
+.cg-keys {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.4rem;
+    margin: 0.5rem 0 0;
+}
+
+.cg-keys[hidden] {
+    display: none;
+}
+
+.cg-key {
+    min-height: 2.75rem;
+    border: 1px solid var(--cg-line);
+    border-radius: 10px;
+    background: var(--cg-panel);
+    color: var(--cg-fg);
+    font: 600 0.85rem var(--cg-mono);
+}
+
+.cg-key:active {
+    background: #1f1f1f;
+}
+
+/* original key */
+.cg-key-home {
+    border-style: dashed;
+    border-color: var(--cg-muted);
+}
+
+.cg-key-on {
+    border-color: var(--cg-accent);
+    color: var(--cg-accent);
+}

@@ -11,8 +11,16 @@ import {
 import { parseSheet } from './parse.ts';
 import { renderSheet } from './render.ts';
 import {
+    firstChord,
+    keyDistance,
+    shiftKey,
+    transposeLines,
+    usesFlats,
+} from './transpose.ts';
+import {
     markConnected,
     save,
+    setShift,
     setTextSize,
     song,
     textSize,
@@ -167,18 +175,80 @@ function showSong(s: Saved): void {
     );
     bar.append(back, titles, size);
 
-    const meta = el('p', 'cg-meta');
-    const bits = [s.key && `KEY ${s.key}`, s.capo && `CAPO ${s.capo}`].filter(
-        Boolean,
-    );
-    meta.textContent = bits.join(' · ');
-
+    const lines = parseSheet(s.sheet);
+    // spelling follows the chords as written, not as heard
+    const written =
+        (s.key && s.capo ? shiftKey(s.key, -s.capo) : s.key) ??
+        firstChord(lines);
     const sheet = el('article', 'cg-sheet');
-    sheet.append(renderSheet(parseSheet(s.sheet)));
+    const keyText = el('span', 'cg-key');
+    let shift = s.shift ?? 0;
+    const draw = (): void => {
+        const flats = written ? usesFlats(written, shift) : false;
+        sheet.replaceChildren(
+            renderSheet(transposeLines(lines, shift, flats)),
+        );
+        const sign = shift > 0 ? '+' : '−';
+        const offset = shift ? ` ${sign}${Math.abs(shift)}` : '';
+        const bits = [
+            s.key
+                ? `KEY ${shift ? shiftKey(s.key, shift) : s.key}${offset}`
+                : `KEY${offset || ' —'}`,
+            s.capo && `CAPO ${s.capo}`,
+        ].filter(Boolean);
+        keyText.textContent = bits.join(' · ');
+        fillPicker();
+    };
+    const move = (by: number): void => {
+        const next = shift + by;
+        // a full octave round is the original
+        shift = Math.abs(next) >= 12 ? 0 : next;
+        setShift(s.id, shift);
+        draw();
+    };
+    const key = el('div', 'cg-transpose');
+    const middle = button('', () => togglePicker(), 'cg-key-btn');
+    middle.append(keyText);
+    middle.setAttribute('aria-label', 'Pick a key');
+    key.append(
+        button('♭', () => move(-1), 'cg-icon'),
+        middle,
+        button('♯', () => move(1), 'cg-icon'),
+    );
 
-    app.append(bar);
-    if (bits.length) app.append(meta);
-    app.append(sheet);
+    // every key, chromatic from C, original marked
+    const home = s.key ?? written;
+    const picker = el('div', 'cg-keys');
+    picker.hidden = true;
+    const togglePicker = (): void => {
+        if (!home) return;
+        picker.hidden = !picker.hidden;
+        fillPicker();
+    };
+    const fillPicker = (): void => {
+        if (!home || picker.hidden) return;
+        const minorKey = /m$/.test(shiftKey(home, 0));
+        picker.replaceChildren(
+            ...Array.from({ length: 12 }, (_, i) => {
+                const name = shiftKey(minorKey ? 'Cm' : 'C', i);
+                const to = keyDistance(home, name);
+                const pick = button(
+                    name,
+                    () => {
+                        move(to - shift);
+                        picker.hidden = true;
+                    },
+                    'cg-key',
+                );
+                if (to === 0) pick.classList.add('cg-key-home');
+                if ((to - shift) % 12 === 0) pick.classList.add('cg-key-on');
+                return pick;
+            }),
+        );
+    };
+    draw();
+
+    app.append(bar, key, picker, sheet);
     app.style.setProperty('--cg-size', `${textSize()}px`);
     window.scrollTo(0, 0);
 }

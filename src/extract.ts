@@ -1,6 +1,7 @@
 // Any chord page's HTML → the song, without the page around it
 
 import { isChord, isChordLineFiller } from './chord.ts';
+import { shiftKey } from './transpose.ts';
 import { readUltimateGuitar, type SongSource } from './ug.ts';
 
 const JUNK =
@@ -290,7 +291,11 @@ function details(
         const shape = play[2] ?? play[3];
         if (key && shape === key) capo = Number(play[1] ?? play[4]);
     }
-    return { key, capo: capo || null };
+    // key as heard, like UG: shapes in C with capo 1 sound in Db
+    return {
+        key: key && capo && play && !plain ? shiftKey(key, capo) : key,
+        capo: capo || null,
+    };
 }
 
 export function looksLikeHtml(text: string): boolean {
