@@ -69,17 +69,30 @@ function fromText(text: string, pageTitle = ''): SongSource | null {
     };
 }
 
-/** bookmarklet: UG's data is only in the served page, some sites build theirs live */
+/** lines with chords on them */
+const chordLines = (source: SongSource): number =>
+    parseSheet(source.sheet).filter(
+        (l) => l.kind === 'chords' || (l.kind === 'lyric' && l.chords),
+    ).length;
+
+/** bookmarklet: UG's data is only in the served page, some sites hide theirs live */
 function fromPages(
     live: string,
     served: string,
     url: string,
 ): SongSource | null {
-    const docs = [page(live), ...(served ? [page(served)] : [])];
+    const docs = [live, served].filter(Boolean).map((html) => page(html));
     const store = docs.find((d) => d.querySelector('.js-store'));
-    const first = store ?? docs[0]!;
-    const next = docs.find((d) => d !== first);
-    return extractSong(first, url) ?? (next ? extractSong(next, url) : null);
+    const ug = store && extractSong(store, url);
+    if (ug) return ug;
+    const found = docs
+        .map((doc) => extractSong(doc, url))
+        .filter((s): s is SongSource => s !== null);
+    // most chords wins, live first on a tie
+    return found.reduce<SongSource | null>(
+        (best, s) => (!best || chordLines(s) > chordLines(best) ? s : best),
+        null,
+    );
 }
 
 function open(source: SongSource): void {
@@ -95,13 +108,16 @@ function open(source: SongSource): void {
 
 const actions: HomeActions = {
     async pasteClipboard() {
+        if (!navigator.clipboard?.readText) return 'blocked';
+        let text: string;
         try {
-            const source = fromText(await navigator.clipboard.readText());
-            if (source) open(source);
-            return source !== null;
+            text = await navigator.clipboard.readText();
         } catch {
-            return false;
+            return 'blocked';
         }
+        const source = fromText(text);
+        if (source) open(source);
+        return source ? 'loaded' : 'empty';
     },
     showText(text) {
         const source = fromText(text);

@@ -589,3 +589,9 @@ body {
 .cg-fallback .cg-steps {
     margin-bottom: 0.8rem;
 }
+
+.cg-load-paste {
+    width: 100%;
+    margin: 0;
+    text-align: center;
+}

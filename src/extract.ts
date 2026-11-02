@@ -4,9 +4,9 @@ import { isChord, isChordLineFiller } from './chord.ts';
 import { readUltimateGuitar, type SongSource } from './ug.ts';
 
 const JUNK =
-    'script, style, noscript, template, svg, iframe, nav, footer, aside, form, button, select, input, textarea, [hidden], [aria-hidden="true"]';
+    'script, style, noscript, template, svg, iframe, nav, footer, aside, form, button, select, input, textarea, dialog, [role="dialog"], [hidden], [aria-hidden="true"]';
 const JUNK_NAME =
-    /^(?:comments?|comment-.*|sidebar|related.*|share|social.*|footer|breadcrumbs?|menu|navbar|cookie.*|newsletter|ads?|advert.*|promo.*)$/i;
+    /^(?:comments?|comment-.*|sidebar|related.*|share|social.*|footer|breadcrumbs?|menu|navbar|cookie.*|newsletter|ads?|advert.*|promo.*|modal.*|.*-modal|popup.*|login.*|signup.*|subscribe.*)$/i;
 const BLOCK =
     /^(?:address|article|blockquote|dd|div|dl|dt|figure|h[1-6]|header|hr|li|main|ol|p|pre|section|table|tbody|thead|tr|td|th|ul)$/;
 const LABEL =
@@ -31,13 +31,22 @@ function strip(root: Element): void {
     }
 }
 
-/** styled chord marks: one-chord leaves, the biggest tag + class group */
+/** '' for anything too long to be a chord */
+function chordText(el: Element): string {
+    const raw = el.textContent ?? '';
+    return raw.length > 60 ? '' : clean(raw).replace(/\s+/g, '');
+}
+
+/** styled chord marks: elements naming one chord, the biggest tag + class group */
 function chordMarks(root: Element): Element[] {
     const groups = new Map<string, Element[]>();
     for (const el of root.querySelectorAll('*')) {
-        if (el.children.length) continue;
-        const text = clean(el.textContent ?? '').trim();
-        if (!text || !isChord(text)) continue;
+        const text = chordText(el);
+        if (!isChord(text)) continue;
+        // Bb<span>m</span>: the whole name, not its parts
+        const up = el.parentElement ? chordText(el.parentElement) : '';
+        if (up !== text && isChord(up)) continue;
+        if ([...el.children].some((c) => chordText(c) === text)) continue;
         const sig = `${tag(el)}.${(el.getAttribute('class') ?? '').trim()}`;
         const list = groups.get(sig) ?? [];
         list.push(el);
@@ -112,7 +121,7 @@ function serialize(root: Element, marks: Set<Element> = new Set()): string {
         }
         if (marks.has(el)) {
             if (lastChord) out += ' ';
-            out += `[ch]${clean(el.textContent ?? '').trim()}[/ch]`;
+            out += `[ch]${chordText(el)}[/ch]`;
             lastChord = true;
             return;
         }
@@ -140,8 +149,13 @@ function textScore(text: string): number {
         const tokens = line.replace(/\[\/?ch\]/g, ' ').trim().split(/\s+/);
         if (!tokens[0]) continue;
         const real = tokens.filter((t) => !isChordLineFiller(t));
-        if (real.length && real.every(isChord)) chords += real.length;
-        else if (/[a-z]{2}/i.test(line)) lyrics++;
+        if (real.length && real.every(isChord)) {
+            chords += real.length;
+            continue;
+        }
+        // inline marks: chords and lyrics on one line
+        chords += line.split('[ch]').length - 1;
+        if (/[a-z]{2}/i.test(line.replace(/\[ch\].*?\[\/ch\]/g, ''))) lyrics++;
     }
     return lyrics >= 2 ? chords : chords * 0.2;
 }

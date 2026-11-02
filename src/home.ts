@@ -6,8 +6,8 @@ import { MAC, bookmarkletHref, browser, type Browser } from './bookmarklet.ts';
 import { connected, remove, songs } from './store.ts';
 
 export interface HomeActions {
-    /** clipboard first; resolves false if nothing usable was there */
-    pasteClipboard(): Promise<boolean>;
+    /** blocked: no clipboard access here, e.g. plain http */
+    pasteClipboard(): Promise<'loaded' | 'empty' | 'blocked'>;
     showText(text: string): boolean;
 }
 
@@ -123,6 +123,25 @@ function ready(): HTMLElement {
     );
     card.append(head);
     card.append(steps(HOW));
+    if (SHORTCUT_URL) {
+        const again = el('details', 'cg-fallback');
+        again.append(el('summary', 'cg-link', 'Lost the Shortcut?'));
+        const add = el(
+            'a',
+            'cg-btn cg-btn-primary cg-btn-wide',
+            'ADD SHORTCUT',
+        );
+        add.href = SHORTCUT_URL;
+        again.append(
+            el(
+                'p',
+                'cg-card-note',
+                'Delete the old one first if it’s still there. This one has the latest version.',
+            ),
+            add,
+        );
+        card.append(again);
+    }
     return card;
 }
 
@@ -272,8 +291,8 @@ function paste(actions: HomeActions, open: boolean): HTMLElement {
     area.autocapitalize = 'off';
     const row = el('div', 'cg-paste-actions');
     const clip = button('CLIPBOARD', () => {
-        void actions.pasteClipboard().then((ok) => {
-            if (!ok) area.focus();
+        void actions.pasteClipboard().then((got) => {
+            if (got !== 'loaded') area.focus();
         });
     });
     const show = button('SHOW', () => {
@@ -349,17 +368,6 @@ export function renderLoad(root: HTMLElement, actions: HomeActions): void {
     const card = el('section', 'cg-load');
     card.append(el('p', 'cg-brand', 'CHORD GRABBER'));
     card.append(el('h1', 'cg-load-title', 'Your song is ready'));
-    const go = button(
-        'LOAD SONG',
-        () => {
-            void actions.pasteClipboard().then((ok) => {
-                if (!ok)
-                    hint.textContent =
-                        'Nothing usable on the clipboard. Try again from the chord page.';
-            });
-        },
-        'cg-btn cg-btn-primary cg-btn-big',
-    );
     const hint = el(
         'p',
         'cg-card-note',
@@ -367,8 +375,37 @@ export function renderLoad(root: HTMLElement, actions: HomeActions): void {
             ? 'iOS will ask once more: tap Paste.'
             : 'Your browser may ask to allow paste.',
     );
+    // long-press paste works where the clipboard API doesn't
+    const box = el('textarea', 'cg-paste-area cg-load-paste');
+    box.placeholder = IOS ? 'Tap and hold here, then Paste' : 'Paste here';
+    box.rows = 3;
+    box.addEventListener('paste', (e) => {
+        const text = e.clipboardData?.getData('text') ?? '';
+        e.preventDefault();
+        if (!actions.showText(text))
+            hint.textContent =
+                'Nothing usable on the clipboard. Try again from the chord page.';
+    });
+    const manual = (): void => {
+        go.replaceWith(box);
+        hint.textContent = 'This page can’t read the clipboard itself.';
+        box.focus();
+    };
+    const go = button(
+        'LOAD SONG',
+        () => {
+            void actions.pasteClipboard().then((got) => {
+                if (got === 'blocked') manual();
+                else if (got === 'empty')
+                    hint.textContent =
+                        'Nothing usable on the clipboard. Try again from the chord page.';
+            });
+        },
+        'cg-btn cg-btn-primary cg-btn-big',
+    );
     const home = el('a', 'cg-link', 'Back to Chord Grabber');
     home.href = '#';
     card.append(go, hint, home);
     root.replaceChildren(card);
+    if (!navigator.clipboard?.readText) manual();
 }
