@@ -109,11 +109,30 @@ export function firstChord(lines: readonly Line[]): string | null {
     return null;
 }
 
-/** bar notation like |C / G / |, left as text by the parser */
-function shiftText(text: string, n: number, flats: boolean): string {
-    return text.replace(/[^\s|]+/g, (token) =>
-        isChord(token) ? transposeChord(token, n, flats) : token,
-    );
+/** every chord name through one function, bar notation included */
+function mapChords(
+    lines: readonly Line[],
+    fn: (name: string) => string,
+): readonly Line[] {
+    const move = (p: Piece): Piece =>
+        p.chord ? { ...p, chord: fn(p.chord) } : p;
+    // bar notation like |C / G / |, left as text by the parser
+    const text = (t: string): string =>
+        t.replace(/[^\s|]+/g, (token) =>
+            isChord(token) ? fn(token) : token,
+        );
+    return lines.map((line): Line => {
+        if (line.kind === 'lyric')
+            return { ...line, units: line.units.map((u) => u.map(move)) };
+        if (line.kind === 'chords')
+            return {
+                ...line,
+                items: line.items.map((p) =>
+                    p.chord ? move(p) : { ...p, text: text(p.text) },
+                ),
+            };
+        return line;
+    });
 }
 
 export function transposeLines(
@@ -122,20 +141,18 @@ export function transposeLines(
     flats: boolean,
 ): readonly Line[] {
     if (!mod(n)) return lines;
-    const move = (p: Piece): Piece =>
-        p.chord ? { ...p, chord: transposeChord(p.chord, n, flats) } : p;
-    return lines.map((line): Line => {
-        if (line.kind === 'lyric')
-            return { ...line, units: line.units.map((u) => u.map(move)) };
-        if (line.kind === 'chords')
-            return {
-                ...line,
-                items: line.items.map((p) =>
-                    p.chord
-                        ? move(p)
-                        : { ...p, text: shiftText(p.text, n, flats) },
-                ),
-            };
-        return line;
-    });
+    return mapChords(lines, (name) => transposeChord(name, n, flats));
+}
+
+/** Cadd9 → C, Em7 → Em, D/F# → D: the root and whether it's minor */
+export function simplifyChord(name: string): string {
+    const chord = parseChord(name);
+    if (!chord) return name;
+    const q = chord.quality;
+    const kind = /^(?:dim|°)/.test(q) ? 'dim' : minor(q) ? 'm' : '';
+    return `${chord.root}${kind}`;
+}
+
+export function simplifyLines(lines: readonly Line[]): readonly Line[] {
+    return mapChords(lines, simplifyChord);
 }

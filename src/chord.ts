@@ -28,7 +28,7 @@ export function isChord(token: string): boolean {
 
 /** bits of a chord line that aren't chords: bars, repeats, dashes */
 export function isChordLineFiller(token: string): boolean {
-    return /^(?:\||\|\||-+|\/|%|x\d+|\(x?\d+x?\)|\(|\)|\.+|:|\*|N\.?C\.?|→|>)$/i.test(
+    return /^(?:\||\|\||-+|\/+|%|x\d+|\(x?\d+x?\)|\(|\)|\.+|:|\*|N\.?C\.?|→|>)$/i.test(
         token,
     );
 }

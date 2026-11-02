@@ -605,8 +605,13 @@ body {
 
 .cg-key-btn {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     min-height: 2.75rem;
-    border: 0;
+    border: 1px solid var(--cg-line);
+    border-radius: 10px;
     background: none;
     color: var(--cg-muted);
     font: 400 0.75rem var(--cg-mono);
@@ -655,4 +660,220 @@ body {
 
 .cg-key-on::after {
     background: var(--cg-accent);
+}
+
+/* Song menus: small cards under the bar */
+
+.cg-pop {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    right: var(--cg-pad);
+    z-index: 2;
+    min-width: 13rem;
+    padding: 0.35rem;
+    border: 1px solid var(--cg-line);
+    border-radius: 14px;
+    background: var(--cg-panel);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    transform-origin: top right;
+}
+
+.cg-pop[hidden] {
+    display: none;
+}
+
+.cg-pop-group + .cg-pop-group {
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid var(--cg-line);
+}
+
+.cg-pop-label {
+    margin: 0.4rem 0.7rem 0.2rem;
+    color: var(--cg-muted);
+    font: 400 0.65rem var(--cg-mono);
+    letter-spacing: 0.14em;
+}
+
+.cg-pop-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0 0.7rem;
+    border: 0;
+    border-radius: 9px;
+    background: none;
+    color: var(--cg-fg);
+    font: inherit;
+    font-size: 0.95rem;
+    text-align: left;
+}
+
+.cg-pop-item:active {
+    background: #1f1f1f;
+}
+
+.cg-pop-check {
+    color: var(--cg-accent);
+}
+
+.cg-pop-check[hidden] {
+    display: none;
+}
+
+.cg-toast {
+    position: fixed;
+    bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    left: 50%;
+    z-index: 3;
+    margin: 0 0 0 -6rem;
+    width: 12rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--cg-line);
+    border-radius: 10px;
+    background: var(--cg-panel);
+    color: var(--cg-fg);
+    font: 400 0.85rem var(--cg-mono);
+    text-align: center;
+}
+
+.cg-sizes {
+    display: flex;
+    margin-left: 0.4rem;
+    padding-left: 0.4rem;
+    border-left: 1px solid var(--cg-line);
+}
+
+.cg-icon-small {
+    font-size: 0.7rem;
+}
+
+.cg-transpose .cg-icon,
+.cg-bar .cg-icon {
+    flex: none;
+}
+
+/* Pages: the sheet laid out in screen-sized columns, swiped sideways */
+
+.cg-sheet.cg-paged {
+    overflow: hidden;
+    column-count: 1;
+    column-gap: calc(2 * var(--cg-pad));
+    column-fill: auto;
+    touch-action: pan-y;
+}
+
+.cg-paged .cg-line,
+.cg-paged .cg-tab {
+    break-inside: avoid;
+}
+
+.cg-paged .cg-section {
+    break-after: avoid;
+}
+
+.cg-pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    margin: 0.4rem 0 0;
+    color: var(--cg-muted);
+    font: 400 0.75rem var(--cg-mono);
+    letter-spacing: 0.12em;
+}
+
+.cg-pager[hidden] {
+    display: none;
+}
+
+.cg-page-arrow:disabled {
+    opacity: 0.3;
+}
+
+/* phones swipe instead */
+@media (hover: none) {
+    .cg-page-arrow {
+        visibility: hidden;
+    }
+}
+
+/* Print */
+
+.cg-print {
+    display: none;
+}
+
+.cg-print-measure {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: -10000px;
+}
+
+.cg-print,
+.cg-print-measure {
+    --cg-accent: #000;
+    --cg-muted: #555;
+    background: #fff;
+    color: #000;
+}
+
+.cg-print-head {
+    margin: 0 0 0.15in;
+}
+
+.cg-print-title {
+    margin: 0;
+    font-size: 20px;
+}
+
+.cg-print-sub {
+    margin: 0.2em 0 0;
+    font: 400 11px var(--cg-mono);
+    letter-spacing: 0.1em;
+}
+
+.cg-print-sheet {
+    padding-top: 0;
+    overflow: hidden;
+    column-count: var(--cg-print-cols, 1);
+    column-gap: 0.4in;
+    column-fill: auto;
+}
+
+.cg-print-sheet .cg-line,
+.cg-print-sheet .cg-tab {
+    break-inside: avoid;
+}
+
+.cg-print-sheet .cg-section {
+    break-after: avoid;
+}
+
+@media print {
+    /* no margin leaves no room for the browser's url and title lines */
+    @page {
+        size: letter;
+        margin: 0;
+    }
+
+    html,
+    body {
+        height: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+    }
+
+    body > * {
+        display: none !important;
+    }
+
+    body > .cg-print {
+        display: block !important;
+        padding: 0.5in;
+    }
 }

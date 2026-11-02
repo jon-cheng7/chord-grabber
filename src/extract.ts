@@ -54,12 +54,11 @@ function depth(el: Element): number {
 /** styled chord marks: elements naming one chord, the biggest tag + class group */
 function chordMarks(root: Element): Element[] {
     const groups = new Map<string, Element[]>();
+    const all: Element[] = [];
     for (const el of root.querySelectorAll('*')) {
         const text = chordText(el);
         if (!isChord(text)) continue;
-        // Bb<span>m</span>: the whole name, not its parts
-        const up = el.parentElement ? chordText(el.parentElement) : '';
-        if (up !== text && isChord(up)) continue;
+        all.push(el);
         const sig = `${tag(el)}.${(el.getAttribute('class') ?? '').trim()}`;
         const list = groups.get(sig) ?? [];
         list.push(el);
@@ -73,7 +72,17 @@ function chordMarks(root: Element): Element[] {
             depth(list[0]!) > depth(best[0]!);
         if (list.length > best.length || tie) best = list;
     }
-    return best.length >= MIN_CHORDS ? best : [];
+    if (best.length < MIN_CHORDS) return [];
+    // Bb<span>m</span>, G/<span>B</span>: the whole name, not its parts
+    const marks = new Set(best);
+    for (const el of all) {
+        const inner = best.filter((m) => m !== el && el.contains(m));
+        if (inner.some((m) => chordText(m) !== chordText(el))) {
+            for (const m of inner) marks.delete(m);
+            marks.add(el);
+        }
+    }
+    return [...marks];
 }
 
 /** deepest element holding most of the marks */

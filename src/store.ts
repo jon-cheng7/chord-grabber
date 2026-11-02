@@ -88,3 +88,11 @@ export function connected(): boolean {
 export function markConnected(): void {
     write(CONNECTED, true);
 }
+
+export function pref<T>(key: string, fallback: T): T {
+    return read<T>(key, fallback);
+}
+
+export function setPref(key: string, value: unknown): void {
+    write(key, value);
+}

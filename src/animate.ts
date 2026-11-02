@@ -58,3 +58,31 @@ export function smoothDetails(root: ParentNode): void {
         });
     }
 }
+
+/** menus and toasts: fade and drop in, fade and lift out */
+export function popIn(el: HTMLElement): void {
+    el.hidden = false;
+    el.animate(
+        [
+            { opacity: 0, transform: 'translateY(-6px) scale(0.98)' },
+            { opacity: 1, transform: 'none' },
+        ],
+        { duration: still() ? 0 : 160, easing: EASE },
+    );
+}
+
+export function popOut(el: HTMLElement, then?: () => void): void {
+    if (el.hidden) return;
+    const run = el.animate(
+        [
+            { opacity: 1, transform: 'none' },
+            { opacity: 0, transform: 'translateY(-6px) scale(0.98)' },
+        ],
+        { duration: still() ? 0 : 120, easing: EASE },
+    );
+    run.addEventListener('finish', () => {
+        el.hidden = true;
+        el.dispatchEvent(new Event('cg-closed'));
+        then?.();
+    });
+}

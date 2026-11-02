@@ -1,7 +1,6 @@
 // Routes: home, the Shortcut's load screen, a song sheet
 
 import './style.css';
-import { slideClosed, slideOpen } from './animate.ts';
 import { receive } from './bookmarklet.ts';
 import {
     renderHome,
@@ -10,52 +9,13 @@ import {
     type HomeActions,
 } from './home.ts';
 import { parseSheet } from './parse.ts';
-import { renderSheet } from './render.ts';
-import {
-    firstChord,
-    keyDistance,
-    shiftKey,
-    transposeLines,
-    usesFlats,
-} from './transpose.ts';
-import {
-    markConnected,
-    save,
-    setShift,
-    setTextSize,
-    song,
-    textSize,
-    type Saved,
-} from './store.ts';
+import { readShared } from './share.ts';
+import { leave, renderSong } from './song.ts';
+import { markConnected, save, setShift, song, type Saved } from './store.ts';
 import { extractSong, looksLikeHtml } from './extract.ts';
 import { readUltimateGuitar, type SongSource } from './ug.ts';
 
-const MIN_SIZE = 12;
-const MAX_SIZE = 30;
-
 const app = document.querySelector<HTMLElement>('#cg-app');
-
-function el<K extends keyof HTMLElementTagNameMap>(
-    tag: K,
-    className: string,
-    text?: string,
-): HTMLElementTagNameMap[K] {
-    const node = document.createElement(tag);
-    node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
-}
-
-function button(
-    text: string,
-    onClick: () => void,
-    className = 'cg-btn',
-): HTMLButtonElement {
-    const node = el('button', className, text);
-    node.type = 'button';
-    node.addEventListener('click', onClick);
-    return node;
-}
 
 const page = (html: string): Document =>
     new DOMParser().parseFromString(html, 'text/html');
@@ -150,117 +110,26 @@ function showLoad(): void {
 }
 
 function showSong(s: Saved): void {
-    if (!app) return;
-    document.title = `${s.title} · Chord Grabber`;
-    app.replaceChildren();
-    app.dataset.view = 'song';
-
-    const bar = el('header', 'cg-bar');
-    const back = el('a', 'cg-icon', '←');
-    back.href = '#';
-    back.setAttribute('aria-label', 'Back');
-    const titles = el('div', 'cg-titles');
-    titles.append(
-        el('h1', 'cg-title', s.title),
-        el('p', 'cg-artist', s.artist),
-    );
-    const size = el('div', 'cg-size');
-    const setSize = (px: number): void => {
-        const next = Math.min(MAX_SIZE, Math.max(MIN_SIZE, px));
-        app.style.setProperty('--cg-size', `${next}px`);
-        setTextSize(next);
-    };
-    size.append(
-        button('A−', () => setSize(textSize() - 1), 'cg-icon'),
-        button('A+', () => setSize(textSize() + 1), 'cg-icon'),
-    );
-    bar.append(back, titles, size);
-
-    const lines = parseSheet(s.sheet);
-    // spelling follows the chords as written, not as heard
-    const written =
-        (s.key && s.capo ? shiftKey(s.key, -s.capo) : s.key) ??
-        firstChord(lines);
-    const sheet = el('article', 'cg-sheet');
-    const keyText = el('span', 'cg-key');
-    let shift = s.shift ?? 0;
-    const draw = (): void => {
-        const flats = written ? usesFlats(written, shift) : false;
-        sheet.replaceChildren(
-            renderSheet(transposeLines(lines, shift, flats)),
-        );
-        const sign = shift > 0 ? '+' : '−';
-        const offset = shift ? ` ${sign}${Math.abs(shift)}` : '';
-        const bits = [
-            s.key
-                ? `KEY ${shift ? shiftKey(s.key, shift) : s.key}${offset}`
-                : `KEY${offset || ' —'}`,
-            s.capo && `CAPO ${s.capo}`,
-        ].filter(Boolean);
-        keyText.textContent = bits.join(' · ');
-        fillPicker();
-    };
-    const move = (by: number): void => {
-        const next = shift + by;
-        // a full octave round is the original
-        shift = Math.abs(next) >= 12 ? 0 : next;
-        setShift(s.id, shift);
-        draw();
-    };
-    const key = el('div', 'cg-transpose');
-    const middle = button('', () => togglePicker(), 'cg-key-btn');
-    middle.append(keyText);
-    middle.setAttribute('aria-label', 'Pick a key');
-    key.append(
-        button('♭', () => move(-1), 'cg-icon'),
-        middle,
-        button('♯', () => move(1), 'cg-icon'),
-    );
-
-    // every key, chromatic from C, original marked
-    const home = s.key ?? written;
-    const picker = el('div', 'cg-keys');
-    picker.hidden = true;
-    const togglePicker = (): void => {
-        if (!home) return;
-        if (!picker.hidden) {
-            slideClosed(picker);
-            return;
-        }
-        picker.hidden = false;
-        fillPicker();
-        slideOpen(picker);
-    };
-    const fillPicker = (): void => {
-        if (!home || picker.hidden) return;
-        const minorKey = /m$/.test(shiftKey(home, 0));
-        picker.replaceChildren(
-            ...Array.from({ length: 12 }, (_, i) => {
-                const name = shiftKey(minorKey ? 'Cm' : 'C', i);
-                const to = keyDistance(home, name);
-                const pick = button(
-                    name,
-                    () => {
-                        move(to - shift);
-                        slideClosed(picker);
-                    },
-                    'cg-key',
-                );
-                if (to === 0) pick.classList.add('cg-key-home');
-                if ((to - shift) % 12 === 0) pick.classList.add('cg-key-on');
-                return pick;
-            }),
-        );
-    };
-    draw();
-
-    app.append(bar, key, picker, sheet);
-    app.style.setProperty('--cg-size', `${textSize()}px`);
-    window.scrollTo(0, 0);
+    if (app) renderSong(app, s);
 }
 
 function route(): void {
+    leave();
     const hash = location.hash.slice(1);
+    // a share link: the song itself, compressed
+    if (hash.startsWith('s=')) {
+        void readShared(hash.slice(2)).then((got) => {
+            if (!got) {
+                showHome('That share link is broken or cut short.');
+                return;
+            }
+            const saved = save(got.source);
+            setShift(saved.id, got.shift);
+            history.replaceState(null, '', `#song=${saved.id}`);
+            showSong({ ...saved, shift: got.shift });
+        });
+        return;
+    }
     // from the Shortcut: page data rides in the hash, never sent to a server
     if (hash.startsWith('ug=') || hash.startsWith('text=')) {
         markConnected();
