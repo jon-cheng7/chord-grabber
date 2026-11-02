@@ -1,11 +1,11 @@
-// Home: what it is, the Shortcut setup, paste, saved songs
+// Home: what it is, the Shortcut setup, paste, the library
 
 import { smoothDetails } from './animate.ts';
-import { songKey } from './key.ts';
 import { parseSheet } from './parse.ts';
 import { renderSheet } from './render.ts';
 import { MAC, bookmarkletHref, browser, type Browser } from './bookmarklet.ts';
-import { connected, remove, songs } from './store.ts';
+import { library } from './library.ts';
+import { connected } from './store.ts';
 
 export interface HomeActions {
     /** blocked: no clipboard access here, e.g. plain http */
@@ -18,7 +18,7 @@ export const SHORTCUT_URL =
     'https://www.icloud.com/shortcuts/75275afaee72489b956b9ee887c6bf76';
 
 const SAMPLE =
-    'Am            F         C\nAny chord sheet, sized for your phone';
+    'Am            F         C\nAny chord sheet, made your own';
 
 const IOS =
     /iPhone|iPad|iPod/.test(navigator.userAgent) ||
@@ -50,9 +50,9 @@ function button(
 
 function hero(): HTMLElement {
     const section = el('header', 'cg-hero');
-    section.append(el('p', 'cg-brand', 'CHORD GRABBER'));
+    section.append(el('p', 'cg-brand', 'CHARTS'));
     section.append(
-        el('h1', 'cg-hero-title', 'Chord sheets, made for your phone.'),
+        el('h1', 'cg-hero-title', 'Chord sheets, your way.'),
     );
     const demo = el('div', 'cg-hero-demo cg-sheet');
     demo.append(renderSheet(parseSheet(SAMPLE)));
@@ -76,7 +76,7 @@ function steps(items: [string, string][]): HTMLElement {
 
 const HOW: [string, string][] = [
     ['Find the song in Safari', ''],
-    ['Share it to Chord Grabber', 'Share button → Chord Grabber in the list.'],
+    ['Share it to Charts', 'Share button → Charts in the list.'],
     ['Tap LOAD SONG here', 'iOS asks once more: tap Paste.'],
 ];
 
@@ -188,14 +188,14 @@ const BLOCKED: Partial<Record<Browser, string>> = {
 
 /** the bar steps, the button to drag, and the copy fallback */
 function install(b: Browser): HTMLElement[] {
-    const mark = el('a', 'cg-bookmark', '♪ Chord Grabber');
+    const mark = el('a', 'cg-bookmark', '♪ Charts');
     mark.href = bookmarkletHref();
     mark.draggable = true;
     mark.addEventListener('click', (e) => {
         // only useful once it's in the bookmarks bar
         e.preventDefault();
         mark.textContent = 'Drag me, don’t click me';
-        window.setTimeout(() => (mark.textContent = '♪ Chord Grabber'), 1800);
+        window.setTimeout(() => (mark.textContent = '♪ Charts'), 1800);
     });
     return [
         steps([
@@ -233,7 +233,7 @@ function computer(): HTMLElement {
     card.append(
         steps([
             ['Open the song’s chord page', 'Most chord sites work.'],
-            [`Click Chord Grabber in your ${BAR[b]}`, BLOCKED[b] ?? ''],
+            [`Click Charts in your ${BAR[b]}`, BLOCKED[b] ?? ''],
             [
                 'It opens here in a new tab',
                 'If it asks, click LOAD SONG and allow paste.',
@@ -268,7 +268,7 @@ function copyFallback(): HTMLElement {
                     : 'Bookmark any page with Ctrl D',
                 '',
             ],
-            ['Edit that bookmark', 'Name it Chord Grabber.'],
+            ['Edit that bookmark', 'Name it Charts.'],
             ['Paste the code as its URL', ''],
         ]),
     );
@@ -306,48 +306,10 @@ function paste(actions: HomeActions, open: boolean): HTMLElement {
     return box;
 }
 
-function saved(): HTMLElement | null {
-    const list = songs();
-    if (!list.length) return null;
-    const section = el('section', 'cg-recent');
-    section.append(el('h2', 'cg-label', `SAVED · ${list.length}`));
-    const ul = el('ul', 'cg-recent-list');
-    for (const s of list) {
-        const li = el('li', 'cg-recent-item');
-        const link = el('a', 'cg-recent-link');
-        link.href = `#song=${s.id}`;
-        const tile = el(
-            'span',
-            'cg-tile',
-            songKey(s.key, parseSheet(s.sheet), s.capo) ??
-                s.title.slice(0, 1).toUpperCase(),
-        );
-        const words = el('span', 'cg-recent-words');
-        words.append(
-            el('span', 'cg-recent-title', s.title),
-            el('span', 'cg-recent-artist', s.artist || '—'),
-        );
-        link.append(tile, words);
-        const del = button(
-            '×',
-            () => {
-                remove(s.id);
-                li.remove();
-            },
-            'cg-icon',
-        );
-        del.setAttribute('aria-label', `Remove ${s.title}`);
-        li.append(link, del);
-        ul.append(li);
-    }
-    section.append(ul);
-    return section;
-}
-
 /** bookmarklet handoff in progress */
 export function renderReceiving(root: HTMLElement): void {
     const card = el('section', 'cg-load');
-    card.append(el('p', 'cg-brand', 'CHORD GRABBER'));
+    card.append(el('p', 'cg-brand', 'CHARTS'));
     card.append(el('h1', 'cg-load-title', 'Fetching the song…'));
     root.replaceChildren(card);
 }
@@ -362,15 +324,14 @@ export function renderHome(
     if (IOS) root.append(connected() ? ready() : setup());
     else root.append(ANDROID ? android() : computer());
     root.append(paste(actions, !IOS));
-    const list = saved();
-    if (list) root.append(list);
+    root.append(library());
     smoothDetails(root);
 }
 
 /** the Shortcut or bookmarklet opened us: one big tap to read the clipboard */
 export function renderLoad(root: HTMLElement, actions: HomeActions): void {
     const card = el('section', 'cg-load');
-    card.append(el('p', 'cg-brand', 'CHORD GRABBER'));
+    card.append(el('p', 'cg-brand', 'CHARTS'));
     card.append(el('h1', 'cg-load-title', 'Your song is ready'));
     const hint = el(
         'p',
@@ -407,7 +368,7 @@ export function renderLoad(root: HTMLElement, actions: HomeActions): void {
         },
         'cg-btn cg-btn-primary cg-btn-big',
     );
-    const home = el('a', 'cg-link', 'Back to Chord Grabber');
+    const home = el('a', 'cg-link', 'Back to Charts');
     home.href = '#';
     card.append(go, hint, home);
     root.replaceChildren(card);

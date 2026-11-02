@@ -145,16 +145,38 @@ export function simplifyLines(lines: readonly Line[]): readonly Line[] {
 
 const DEGREES = ['1', '♭2', '2', '♭3', '3', '4', '♯4', '5', '♭6', '6', '♭7', '7'];
 
-/** G in the key of D → 4; Em7 → 2m7; D/F# → 1/3 */
+const NUMERALS = [
+    'I',
+    '♭II',
+    'II',
+    '♭III',
+    'III',
+    'IV',
+    '♯IV',
+    'V',
+    '♭VI',
+    'VI',
+    '♭VII',
+    'VII',
+];
+
+/** G in the key of D → IV; Em7 → ii7; Bdim → vii°; D/F# → I/3 */
 export function numberChord(name: string, key: string): string {
     const chord = parseChord(name);
     const home = parseChord(key);
     if (!chord || !home) return name;
     const tonic = pitch(home.root);
-    const deg = (note: string): string =>
-        DEGREES[mod(pitch(note) - tonic)] ?? '?';
-    const bass = chord.bass ? `/${deg(chord.bass)}` : '';
-    return `${deg(chord.root)}${chord.quality}${bass}`;
+    const step = (note: string): number => mod(pitch(note) - tonic);
+    // minor and diminished in lower case, so the m goes
+    const dim = /^(?:dim|°)/.exec(chord.quality);
+    const low = dim || minor(chord.quality);
+    const quality = dim
+        ? `°${chord.quality.slice(dim[0].length)}`
+        : chord.quality.replace(/^(?:min|m(?!aj)|-)/, '');
+    const numeral = NUMERALS[step(chord.root)] ?? '?';
+    // the bass as a scale step, like figured bass
+    const bass = chord.bass ? `/${DEGREES[step(chord.bass)] ?? '?'}` : '';
+    return `${low ? numeral.toLowerCase() : numeral}${quality}${bass}`;
 }
 
 export function numberLines(

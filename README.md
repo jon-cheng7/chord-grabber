@@ -1,4 +1,4 @@
-# Chord Grabber
+# Charts
 
 Chord sheets re-rendered for a phone: chords over lyrics that wrap without losing their place. Built to sit in the Code lab on joncheng.ca.
 

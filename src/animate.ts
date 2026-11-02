@@ -86,3 +86,47 @@ export function popOut(el: HTMLElement, then?: () => void): void {
         then?.();
     });
 }
+
+/** bottom sheets: up from the edge, back down */
+export function sheetIn(el: HTMLElement): void {
+    el.hidden = false;
+    el.animate([{ transform: 'translateY(100%)' }, { transform: 'none' }], {
+        duration: still() ? 0 : 280,
+        easing: EASE,
+    });
+}
+
+export function sheetOut(el: HTMLElement, then?: () => void): void {
+    const run = el.animate(
+        [{ transform: 'none' }, { transform: 'translateY(100%)' }],
+        { duration: still() ? 0 : 200, easing: 'cubic-bezier(0.3, 0, 1, 1)' },
+    );
+    run.addEventListener('finish', () => {
+        el.hidden = true;
+        then?.();
+    });
+}
+
+/** rows and cards arriving, one after another */
+export function rise(el: HTMLElement, i = 0): void {
+    el.animate(
+        [
+            { opacity: 0, transform: 'translateY(8px)' },
+            { opacity: 1, transform: 'none' },
+        ],
+        {
+            duration: still() ? 0 : 240,
+            delay: still() ? 0 : Math.min(i, 12) * 30,
+            easing: EASE,
+            fill: 'backwards',
+        },
+    );
+}
+
+/** a row folds away, then goes */
+export function collapse(el: HTMLElement, then?: () => void): void {
+    grow(el, height(el), 0).addEventListener('finish', () => {
+        el.remove();
+        then?.();
+    });
+}

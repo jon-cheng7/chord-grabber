@@ -8,6 +8,7 @@ import {
     renderReceiving,
     type HomeActions,
 } from './home.ts';
+import { closeLibrary } from './library.ts';
 import { parseSheet } from './parse.ts';
 import { readShared } from './share.ts';
 import { leave, renderSong } from './song.ts';
@@ -105,14 +106,14 @@ const actions: HomeActions = {
 
 function showHome(notice?: string): void {
     if (!app) return;
-    document.title = 'Chord Grabber';
+    document.title = 'Charts';
     app.dataset.view = 'home';
     renderHome(app, actions, notice);
 }
 
 function showLoad(): void {
     if (!app) return;
-    document.title = 'Chord Grabber';
+    document.title = 'Charts';
     app.dataset.view = 'load';
     renderLoad(app, actions);
 }
@@ -123,6 +124,7 @@ function showSong(s: Saved): void {
 
 function route(): void {
     leave();
+    closeLibrary();
     const hash = location.hash.slice(1);
     // a share link: the song itself, compressed
     if (hash.startsWith('s=')) {

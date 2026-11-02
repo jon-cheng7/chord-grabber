@@ -6,9 +6,11 @@ import { findSections } from './arrange.ts';
 import { openEditor, sheetText } from './editor.ts';
 import { closeArranger, openArranger } from './arranger.ts';
 import { closeChooser, openChooser } from './chooser.ts';
+import { exportSong } from './files.ts';
 import { songKey } from './key.ts';
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
+import { toast } from './toast.ts';
 import {
     chordAt,
     passing,
@@ -31,6 +33,7 @@ import {
     pref,
     setArrangement,
     setEdits,
+    setFret,
     updateSheet,
     setPref,
     setShift,
@@ -128,7 +131,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     leave();
     wanted = true;
     void wake();
-    document.title = `${s.title} · Chord Grabber`;
+    document.title = `${s.title} · Charts`;
     app.replaceChildren();
     app.dataset.view = 'song';
     app.style.setProperty('--cg-size', `${textSize()}px`);
@@ -137,6 +140,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     // the key as written, never as heard with a capo
     const written = songKey(s.key, lines, s.capo);
     let shift = s.shift ?? 0;
+    let capo = s.fret ?? 0;
     let simple = pref<boolean>('cg-simple', false);
     let numbers = pref<boolean>('cg-numbers', false);
     let view = pref<View>('cg-view', 'scroll');
@@ -146,12 +150,17 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const hist = history(s.id);
     // edits are kept in the written key, so transposing moves them too
     const writtenFlats = written ? usesFlats(written, 0) : false;
+    /** semitones from the sheet to what's drawn: the key, less the capo */
+    const look = (): number => shift - capo;
     const flatsNow = (): boolean =>
-        written ? usesFlats(written, shift) : false;
+        written ? usesFlats(written, look()) : false;
     const show = (name: string): string =>
-        transposeChord(name, shift, flatsNow());
+        transposeChord(name, look(), flatsNow());
     const store = (name: string): string =>
-        transposeChord(name, -shift, writtenFlats);
+        transposeChord(name, -look(), writtenFlats);
+    /** a drawn chord back up by the capo, to play */
+    const sound = (name: string): string =>
+        transposeChord(name, capo, flatsNow());
 
     // arrangement: the sheet's sections in your order, null for as written
     const sections = findSections(lines);
@@ -169,20 +178,20 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const simpleNow = (): boolean => simple && !reharm;
     const numbersNow = (): boolean => numbers && !reharm && written !== null;
     const display = (ls: readonly Line[]): readonly Line[] => {
-        const moved = transposeLines(ls, shift, flatsNow());
+        const moved = transposeLines(ls, look(), flatsNow());
         const plain = simpleNow() ? simplifyLines(moved) : moved;
         return numbersNow() && written
-            ? numberLines(plain, shiftKey(written, shift))
+            ? numberLines(plain, shiftKey(written, look()))
             : plain;
     };
-    /** a chord name as it sounds now */
-    const heard = (name: string): string =>
+    /** a chord name as drawn now */
+    const drawn = (name: string): string =>
         simpleNow() ? simplifyChord(show(name)) : show(name);
     /** how a chord is written on screen now: a name or a number */
     const label = (name: string): string =>
         numbersNow() && written
-            ? numberChord(heard(name), shiftKey(written, shift))
-            : heard(name);
+            ? numberChord(drawn(name), shiftKey(written, look()))
+            : drawn(name);
     const shown = (): readonly Line[] => display(current().lines);
     /** a chord's place as drawn: row:piece */
     const shownAt = (target: Element): string | null =>
@@ -196,9 +205,10 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const keyLabel = (): string => {
         const sign = shift > 0 ? '+' : '−';
         const offset = shift ? ` ${sign}${Math.abs(shift)}` : '';
-        return written
+        const sounds = written
             ? `KEY ${shift ? shiftKey(written, shift) : written}${offset}`
             : `KEY${offset || ' —'}`;
+        return capo ? `${sounds} · CAPO ${capo}` : sounds;
     };
 
     // top bar: back, titles, share, menu
@@ -236,13 +246,17 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                             toast('One moment…');
                             return;
                         }
-                        void sendLink(link, `${s.title} · Chord Grabber`).then(
+                        void sendLink(link, `${s.title} · Charts`).then(
                             (how) => {
                                 if (how === 'copied') toast('Link copied');
                                 if (how === 'failed') toast('Couldn’t share');
                             },
                         );
                     },
+                },
+                {
+                    label: 'Export file',
+                    pick: () => void exportSong(s.id),
                 },
                 {
                     label: 'Print',
@@ -272,7 +286,17 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                     },
                 },
                 {
-                    label: 'Numbers (1 4 5)',
+                    label: 'Capo',
+                    on: () => capo > 0,
+                    pick: () => {
+                        fillCapos();
+                        if (!picker.hidden) slideClosed(picker);
+                        slideOpen(capos);
+                        settle();
+                    },
+                },
+                {
+                    label: 'Numerals',
                     on: () => numbers,
                     pick: () => {
                         numbers = !numbers;
@@ -436,6 +460,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         () => {
             if (!written) return;
             if (picker.hidden) fillPicker(true);
+            if (!capos.hidden) slideClosed(capos);
             if (picker.hidden) slideOpen(picker);
             else slideClosed(picker);
             settle();
@@ -487,6 +512,36 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             }),
         );
     };
+
+    // capo: same sound, easier shapes; each fret shows the key you'd play in
+    const capos = el('div', 'cg-keys cg-capos');
+    capos.hidden = true;
+    const fillCapos = (): void =>
+        capos.replaceChildren(
+            ...Array.from({ length: 8 }, (_, fret) => {
+                const pick = button(
+                    fret ? String(fret) : 'NONE',
+                    () => {
+                        capo = fret;
+                        setFret(s.id, capo);
+                        slideClosed(capos);
+                        draw();
+                        settle();
+                    },
+                    'cg-key',
+                );
+                if (written)
+                    pick.append(
+                        el(
+                            'span',
+                            'cg-capo-shape',
+                            shiftKey(written, shift - fret),
+                        ),
+                    );
+                if (fret === capo) pick.classList.add('cg-key-on');
+                return pick;
+            }),
+        );
 
     // sheet, scrolled or in pages
     const sheet = el('article', 'cg-sheet');
@@ -627,6 +682,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         if (stepping) mark();
         keyText.textContent = keyLabel();
         fillPicker();
+        if (!capos.hidden) fillCapos();
         if (view === 'pages') layout();
     };
     // reharm: tappable chords, edits marked, passing-chord gaps
@@ -734,7 +790,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             const original = chordAt(v.raw, row, piece);
             if (original) {
                 setAt(row, piece, original);
-                playChords([show(original)]);
+                playChords([sound(show(original))]);
             }
             return true;
         }
@@ -747,7 +803,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                 title: `Passing chord: ${show(g.from)} → ${show(g.to)}`,
                 current: null,
                 groups: showGroups([{ label: 'TRY', options: g.options }]),
-                hear: (c) => playChords([c]),
+                hear: (c) => playChords([sound(c)]),
                 choose: (c) => setAt(row, piece, store(c)),
             });
             return true;
@@ -766,7 +822,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                 title: `Add a chord on “${word}”`,
                 current: null,
                 groups: [],
-                hear: (c) => playChords([c]),
+                hear: (c) => playChords([sound(c)]),
                 choose: (c) => setAt(row, piece, store(c)),
             });
             return true;
@@ -789,7 +845,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                     : // from the sheet's own chord, so edits don't drift ever further
                       suggestFor(original ?? now, written, writtenFlats),
             ),
-            hear: (c) => playChords([c]),
+            hear: (c) => playChords([sound(c)]),
             choose: (c) => setAt(row, piece, store(c)),
             revert:
                 original && original !== now
@@ -846,7 +902,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         if (!list.length) return;
         cursor = Math.min(list.length - 1, Math.max(0, i));
         const at = list[cursor]!;
-        holdChord(heard(at.chord));
+        holdChord(sound(drawn(at.chord)));
         mark();
         syncOrder(at.block);
         nowName.textContent = label(at.chord);
@@ -1015,7 +1071,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         relink();
     };
 
-    app.append(bar, key, dock, picker, sheet, pager, stepBar);
+    app.append(bar, key, dock, picker, capos, sheet, pager, stepBar);
     draw();
     relink();
     layout();
@@ -1109,30 +1165,5 @@ function openPop(pop: HTMLElement, from: HTMLElement): void {
         'cg-closed',
         () => document.removeEventListener('pointerdown', away),
         { once: true },
-    );
-}
-
-let lastToast: HTMLElement | null = null;
-
-function toast(text: string, action?: { label: string; run: () => void }): void {
-    if (lastToast) {
-        const old = lastToast;
-        popOut(old, () => old.remove());
-    }
-    const note = el('div', 'cg-toast');
-    note.append(el('span', 'cg-toast-text', text));
-    if (action) {
-        const act = button(action.label, () => {
-            popOut(note, () => note.remove());
-            action.run();
-        }, 'cg-toast-action');
-        note.append(act);
-    }
-    document.body.append(note);
-    lastToast = note;
-    popIn(note);
-    window.setTimeout(
-        () => popOut(note, () => note.remove()),
-        action ? 4000 : 1800,
     );
 }
