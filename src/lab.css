@@ -1,0 +1,119 @@
+/* Melody lab (dev only) */
+
+.lab-status {
+    margin: 0.6rem 0;
+    color: var(--cg-muted);
+    font-size: 0.9rem;
+}
+
+.lab-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.8rem 0;
+}
+
+.lab-file {
+    display: none;
+}
+
+.lab-readout {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin: 0.4rem 0;
+}
+
+.lab-note {
+    min-width: 4ch;
+    margin: 0;
+    color: var(--cg-accent);
+    font: 600 2.4rem var(--cg-mono);
+}
+
+.lab-cents {
+    min-width: 5ch;
+    margin: 0;
+    color: var(--cg-muted);
+    font: 400 1rem var(--cg-mono);
+}
+
+.lab-clarity {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: #1a1a1a;
+    overflow: hidden;
+}
+
+.lab-clarity-bar {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--cg-muted);
+}
+
+.lab-clarity-bar.lab-clear {
+    background: var(--cg-accent);
+}
+
+.lab-trace {
+    display: block;
+    width: 100%;
+    height: 14rem;
+    margin: 0.6rem 0;
+    border: 1px solid var(--cg-line);
+    border-radius: 10px;
+    background: #0d0d0d;
+}
+
+.lab-tap {
+    width: 100%;
+    min-height: 5rem;
+    font-size: 0.9rem;
+}
+
+.lab-tap:disabled {
+    opacity: 0.35;
+}
+
+.lab-results {
+    margin: 1.4rem 0 3rem;
+}
+
+.lab-table {
+    width: 100%;
+    border-collapse: collapse;
+    font: 400 0.85rem var(--cg-mono);
+}
+
+.lab-table th {
+    padding: 0.4rem;
+    color: var(--cg-muted);
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-align: left;
+}
+
+.lab-table td {
+    padding: 0.4rem;
+    border-top: 1px solid var(--cg-line);
+}
+
+.lab-kmn {
+    color: var(--cg-accent);
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.lab-notes {
+    color: var(--cg-muted);
+}
+
+.lab-unsure td {
+    color: var(--cg-muted);
+}
+
+.lab-unsure .lab-kmn {
+    color: var(--cg-muted);
+}
