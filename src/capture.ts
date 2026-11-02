@@ -1,5 +1,5 @@
 // Mic in, pitch out: the work happens on the audio thread, the page only gets the answers.
-// Nothing is recorded or kept: just a pitch and how clear it was, every 32 ms
+// The app keeps nothing but pitch and how clear it was; only the lab asks for the audio too
 
 import workletUrl from './capture-worklet.ts?worker&url';
 import type { Frame } from './listen/summary.ts';
@@ -7,11 +7,15 @@ import type { Frame } from './listen/summary.ts';
 export interface Capture {
     /** now, on the frames' clock: stamp taps with this */
     now(): number;
+    /** samples per second of what record gets */
+    rate: number;
     stop(): void;
 }
 
 export async function capture(
     onFrame: (f: Frame) => void,
+    /** the raw signal in chunks, each stamped with when it started (lab only) */
+    record?: (pcm: Float32Array, at: number) => void,
 ): Promise<Capture | 'denied' | 'unsupported'> {
     if (
         !navigator.mediaDevices?.getUserMedia ||
@@ -38,10 +42,17 @@ export async function capture(
     // a silent path out keeps every browser running the worklet
     const mute = ctx.createGain();
     mute.gain.value = 0;
-    node.port.onmessage = (e: MessageEvent<Frame>) => onFrame(e.data);
+    node.port.onmessage = (
+        e: MessageEvent<Frame | { pcm: Float32Array; at: number }>,
+    ) => {
+        if ('pcm' in e.data) record?.(e.data.pcm, e.data.at);
+        else onFrame(e.data);
+    };
+    if (record) node.port.postMessage('record');
     source.connect(node).connect(mute).connect(ctx.destination);
     return {
         now: () => ctx.currentTime,
+        rate: ctx.sampleRate,
         stop: () => {
             node.port.onmessage = null;
             source.disconnect();

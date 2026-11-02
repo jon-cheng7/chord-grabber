@@ -10,3 +10,9 @@ declare module '*?worker&url' {
     const url: string;
     export default url;
 }
+
+// any file as its served URL
+declare module '*?url' {
+    const url: string;
+    export default url;
+}

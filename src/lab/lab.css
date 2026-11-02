@@ -77,10 +77,6 @@
     opacity: 0.35;
 }
 
-.lab-results {
-    margin: 1.4rem 0 3rem;
-}
-
 .lab-table {
     width: 100%;
     border-collapse: collapse;
@@ -100,25 +96,100 @@
     border-top: 1px solid var(--cg-line);
 }
 
-.lab-kmn {
-    color: var(--cg-accent);
-    font-size: 1.1rem;
-    font-weight: 600;
-}
-
-.lab-notes {
-    color: var(--cg-muted);
-}
-
-.lab-unsure td {
-    color: var(--cg-muted);
-}
-
-.lab-unsure .lab-kmn {
-    color: var(--cg-muted);
-}
-
 .lab-key {
     color: var(--cg-fg);
     font: 600 0.8rem var(--cg-mono);
+}
+
+/* this take: answers and its scorecard */
+.lab-take,
+.lab-library {
+    margin: 1.6rem 0;
+    padding-top: 1rem;
+    border-top: 1px solid var(--cg-line);
+}
+
+.lab-take[hidden] {
+    display: none;
+}
+
+.lab-field {
+    display: grid;
+    gap: 0.3rem;
+    margin: 0 0 0.7rem;
+}
+
+.lab-field .cg-label {
+    margin: 0;
+}
+
+.lab-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--cg-muted);
+    font-size: 0.85rem;
+}
+
+.lab-card {
+    margin: 0.8rem 0;
+    overflow-x: auto;
+}
+
+.lab-sum {
+    margin: 0.3rem 0;
+    font: 400 0.8rem var(--cg-mono);
+}
+
+.lab-expect {
+    color: var(--cg-fg);
+    font-weight: 600;
+}
+
+.lab-mark {
+    font-weight: 600;
+}
+
+.lab-right {
+    color: var(--cg-accent);
+}
+
+.lab-wrong {
+    color: #ff6b6b;
+}
+
+.lab-unsure,
+.lab-skip,
+.lab-muted {
+    color: var(--cg-muted);
+}
+
+.lab-total td {
+    font-weight: 600;
+}
+
+/* every take kept in this browser */
+.lab-list {
+    margin: 0.6rem 0;
+    padding: 0;
+    list-style: none;
+}
+
+.lab-item {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--cg-line);
+}
+
+.lab-item-words {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    font-size: 0.8rem;
+}
+
+.lab-item-title {
+    font-weight: 600;
 }

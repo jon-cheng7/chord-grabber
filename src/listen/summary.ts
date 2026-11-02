@@ -73,6 +73,8 @@ const SCORE = {
     first: 0.15,
     downbeat: 0.3,
 };
+// a note of the chord being played is a little likelier to be the one that matters
+const CHORD_TONE = 0.1;
 
 // the key's own notes; minor keeps its raised seventh, the V chord's
 const MAJOR_SCALE = [0, 2, 4, 5, 7, 9, 11];
@@ -183,7 +185,7 @@ export function notes(
 
 /**
  * bounds are the tap times: span i runs from bounds[i] to bounds[i + 1].
- * Only closed spans: a chord still sounding when recording stopped isn't one
+ * The last chord needs an end too: when recording stopped
  */
 export function summarize(
     frames: readonly Frame[],
@@ -191,7 +193,18 @@ export function summarize(
     key: Key | null = null,
     cents = tuning(frames),
 ): Heard[] {
-    const all = notes(frames, cents, key);
+    return score(notes(frames, cents, key), bounds);
+}
+
+/**
+ * the key melody note of each span, from notes found any way (ours or a model's).
+ * tones: each span's chord notes, when the chords are known
+ */
+export function score(
+    all: readonly Note[],
+    bounds: readonly number[],
+    tones: readonly (readonly number[] | null)[] = [],
+): Heard[] {
     return bounds.slice(1).map((end, i) => {
         const start = bounds[i]!;
         // a note belongs to the chord it starts in, unless it's pushed into the next
@@ -253,7 +266,8 @@ export function summarize(
                     SCORE.held * (c.held / most.held) +
                     SCORE.repeats * (c.count / most.count) +
                     SCORE.first * Number(c.first) +
-                    SCORE.downbeat * Number(c.beat),
+                    SCORE.downbeat * Number(c.beat) +
+                    CHORD_TONE * Number(!!tones[i]?.includes(pc)),
             }))
             .sort((a, b) => b.score - a.score);
         const [best, runner] = ranked;
