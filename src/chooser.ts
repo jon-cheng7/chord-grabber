@@ -8,6 +8,8 @@ export interface ChooserOptions {
     title: string;
     /** what's there now, as shown */
     current: string | null;
+    /** how it's read: IV, ♭VII in G */
+    reading?: string;
     groups: OptionGroup[];
     /** an option in context */
     hear: (chord: string) => void;
@@ -67,16 +69,18 @@ export function openChooser(o: ChooserOptions): void {
     const head = el('div', 'cg-chooser-head');
     const titles = el('div', 'cg-chooser-titles');
     titles.append(el('p', 'cg-chooser-title', o.title));
+    const now = o.current
+        ? `Now: ${o.current}${o.reading ? ` · ${o.reading}` : ''}`
+        : null;
     if (o.compare) {
         const ab = button(
-            `▶ ${o.current ? `Now: ${o.current}` : 'As written'}`,
+            `▶ ${now ?? 'As written'}`,
             o.compare,
             'cg-chooser-now cg-chooser-ab',
         );
         ab.setAttribute('aria-label', 'Hear it as it is now');
         titles.append(ab);
-    } else if (o.current)
-        titles.append(el('p', 'cg-chooser-now', `Now: ${o.current}`));
+    } else if (now) titles.append(el('p', 'cg-chooser-now', now));
     head.append(titles, button('×', closeChooser, 'cg-icon'));
     box.append(head);
 

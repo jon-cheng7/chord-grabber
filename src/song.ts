@@ -15,6 +15,7 @@ import { closeEditor, openEditor, sheetText } from './editor.ts';
 import { closeArranger, openArranger } from './arranger.ts';
 import { closeChooser, openChooser } from './chooser.ts';
 import { exportSong } from './files.ts';
+import { analyze, fromSong, styled, type Harmony } from './harmony.ts';
 import { songKey } from './key.ts';
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
@@ -185,6 +186,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             order ?? sections.order,
             edits,
         );
+    // what each chord is doing: worked out only when reharm asks, once per redraw
+    let harmony: Harmony | null = null;
+    const reading = (): Harmony => (harmony ??= analyze(current(), written));
     // reharm shows the chords as they are, to edit them
     const simpleNow = (): boolean => simple && !reharm;
     const numbersNow = (): boolean => numbers && !reharm && written !== null;
@@ -727,6 +731,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     // playing draws each different section once and jumps back for repeats
     let packed: Compact | null = null;
     const draw = (): void => {
+        harmony = null;
         packed = stepping ? compact(current()) : null;
         sheet.replaceChildren(
             renderSheet(packed ? display(packed.lines) : shown()),
@@ -837,7 +842,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             ghost.setAttribute('aria-label', `Bring back ${show(chord)}`);
             slot.append(ghost);
         }
-        gaps = passingGaps(v.lines, written, writtenFlats);
+        gaps = passingGaps(v.lines, reading().keyAt, writtenFlats);
         for (const g of gaps) {
             const slot = slotAt(g.line, g.piece);
             if (!slot || slot.textContent) continue;
@@ -900,23 +905,49 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             return true;
         }
         const original = chordAt(v.raw, row, piece);
+        const h = reading();
+        const here = h.at(row, piece);
+        const key = h.keyAt(row);
         // an added chord stays a passing chord: only passing options
         const [before, after] = neighbours(row, piece);
         const around = inPlace(before, after);
         const pass =
             original === null && before && after
-                ? passing(before, after, written, writtenFlats)
+                ? passing(before, after, key, writtenFlats)
                 : null;
+        // from the sheet's own chord, so edits don't drift ever further
+        const source = original ?? now;
+        const label = (block: number): string =>
+            sections.library.find((x) => x.id === v.blocks[block]?.id)?.label ??
+            '';
+        const offered = (): OptionGroup[] => {
+            const groups = styled(
+                suggestFor(source, key, writtenFlats),
+                h.profile,
+            );
+            const song = here && fromSong(h, here, source, label, writtenFlats);
+            if (!song) return groups;
+            const taken = new Set(
+                groups.flatMap((g) => g.options.map((o) => o.chord)),
+            );
+            const fresh = song.options.filter((o) => !taken.has(o.chord));
+            return fresh.length
+                ? [{ ...song, options: fresh }, ...groups]
+                : groups;
+        };
+        const homeKey = written && shiftKey(written, 0);
         openChooser({
             title: pass
                 ? `Passing chord: ${show(before!)} → ${show(after!)}`
                 : `Replace ${show(now)}`,
             current: show(now),
+            reading: here?.numeral
+                ? here.key === homeKey
+                    ? here.numeral
+                    : `${here.numeral} in ${show(here.key)}`
+                : undefined,
             groups: showGroups(
-                pass
-                    ? [{ label: 'TRY', options: pass.options }]
-                    : // from the sheet's own chord, so edits don't drift ever further
-                      suggestFor(original ?? now, written, writtenFlats),
+                pass ? [{ label: 'TRY', options: pass.options }] : offered(),
             ),
             hear: around.hear,
             compare: () => around.asIs(show(now)),

@@ -299,10 +299,10 @@ const THRESHOLD = 0.35;
 const words = (line: Line): Piece[] =>
     line.kind === 'lyric' ? line.units.flat() : [];
 
-/** passing chords worth offering: at most one per line */
+/** passing chords worth offering: at most one per line; keyAt gives each row's key */
 export function passingGaps(
     lines: readonly Line[],
-    key: string | null,
+    keyAt: (line: number) => string | null,
     flats: boolean,
 ): Gap[] {
     const all = spots(lines);
@@ -322,7 +322,7 @@ export function passingGaps(
         const room = at - a.piece + 1;
         if (room < MIN_WORDS || at <= a.piece) return;
 
-        const pass = passing(a.chord, b.chord, key, flats);
+        const pass = passing(a.chord, b.chord, keyAt(b.line), flats);
         if (!pass) return;
         const { options, fit } = pass;
         // a walking bass sits halfway along, the rest just before the change
