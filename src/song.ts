@@ -1,7 +1,15 @@
 // Song view: the sheet, key, and the song menu
 
 import { popIn, popOut, slideClosed, slideOpen } from './animate.ts';
-import { holdChord, playChords, resetVoicing, stopHeld } from './audio.ts';
+import {
+    SOUNDS,
+    holdChord,
+    playChords,
+    resetVoicing,
+    setSound,
+    stopHeld,
+    type Sound,
+} from './audio.ts';
 import { findSections } from './arrange.ts';
 import { closeEditor, openEditor, sheetText } from './editor.ts';
 import { closeArranger, openArranger } from './arranger.ts';
@@ -145,6 +153,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     let numbers = pref<boolean>('cg-numbers', false);
     let view = pref<View>('cg-view', 'scroll');
     let reharm = pref<boolean>('cg-reharm', false);
+    let instrument = pref<Sound>('cg-sound', 'keys');
+    if (!(instrument in SOUNDS)) instrument = 'keys';
+    setSound(instrument);
     let edits: Edit[] = s.edits ?? [];
     // undo and redo outlive a redraw of this song, not a visit to another
     const hist = history(s.id);
@@ -290,7 +301,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                     on: () => capo > 0,
                     pick: () => {
                         fillCapos();
-                        if (!picker.hidden) slideClosed(picker);
+                        only(capos);
                         slideOpen(capos);
                         settle();
                     },
@@ -303,6 +314,21 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                         setPref('cg-numbers', numbers);
                         if (numbers && !written) toast('No key to count from');
                         draw();
+                    },
+                },
+            ],
+        },
+        {
+            label: 'PLAYBACK',
+            items: [
+                {
+                    label: 'Sound',
+                    pick: () => {
+                        fillSounds();
+                        only(sounds);
+                        if (sounds.hidden) slideOpen(sounds);
+                        else slideClosed(sounds);
+                        settle();
                     },
                 },
             ],
@@ -460,7 +486,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         () => {
             if (!written) return;
             if (picker.hidden) fillPicker(true);
-            if (!capos.hidden) slideClosed(capos);
+            only(picker);
             if (picker.hidden) slideOpen(picker);
             else slideClosed(picker);
             settle();
@@ -534,7 +560,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                     pick.append(
                         el(
                             'span',
-                            'cg-capo-shape',
+                            'cg-key-sub',
                             shiftKey(written, shift - fret),
                         ),
                     );
@@ -542,6 +568,35 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                 return pick;
             }),
         );
+
+    // sounds: a mood each; picking one plays the key's chord in it
+    const sounds = el('div', 'cg-keys cg-sounds');
+    sounds.hidden = true;
+    const fillSounds = (): void =>
+        sounds.replaceChildren(
+            ...(Object.keys(SOUNDS) as Sound[]).map((id) => {
+                const pick = button(
+                    SOUNDS[id].label,
+                    () => {
+                        instrument = id;
+                        setSound(id);
+                        setPref('cg-sound', id);
+                        fillSounds();
+                        if (stepping) go(cursor);
+                        else if (written) playChords([sound(show(written))]);
+                    },
+                    'cg-key',
+                );
+                pick.append(el('span', 'cg-key-sub', SOUNDS[id].mood));
+                if (id === instrument) pick.classList.add('cg-key-on');
+                return pick;
+            }),
+        );
+    /** one panel under the key at a time */
+    const only = (keep: HTMLElement): void => {
+        for (const p of [picker, capos, sounds])
+            if (p !== keep && !p.hidden) slideClosed(p);
+    };
 
     // sheet, scrolled or in pages
     const sheet = el('article', 'cg-sheet');
@@ -1076,7 +1131,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         relink();
     };
 
-    app.append(bar, key, dock, picker, capos, sheet, pager, stepBar);
+    app.append(bar, key, dock, picker, capos, sounds, sheet, pager, stepBar);
     draw();
     relink();
     layout();

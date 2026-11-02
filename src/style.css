@@ -637,12 +637,17 @@ body {
     font: 600 0.85rem var(--cg-mono);
 }
 
-/* capo frets, each with the shapes you'd play */
+/* capo frets, each with the shapes you'd play; sounds, each with its mood */
 .cg-capos {
     grid-template-columns: repeat(4, 1fr);
 }
 
-.cg-capos .cg-key {
+.cg-sounds {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.cg-capos .cg-key,
+.cg-sounds .cg-key {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -650,7 +655,7 @@ body {
     gap: 0.1rem;
 }
 
-.cg-capo-shape {
+.cg-key-sub {
     color: var(--cg-muted);
     font: 400 0.65rem var(--cg-mono);
     letter-spacing: 0.1em;
