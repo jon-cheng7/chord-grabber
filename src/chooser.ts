@@ -1,8 +1,7 @@
 // Reharm chooser: try chords from the bottom sheet, DONE keeps one
 
 import { popIn, popOut, slideClosed } from './animate.ts';
-import { isChord } from './chord.ts';
-import type { OptionGroup } from './reharm.ts';
+import { isChord } from './music/chord.ts';
 
 /** a way for the chords around a pick to follow it */
 export interface FollowUp {
@@ -15,13 +14,19 @@ export interface FollowUp {
     apply: () => void;
 }
 
+/** options as shown: names in the reader's key, reasons in words */
+export interface ChoiceGroup {
+    label: string;
+    options: { chord: string; why: string }[];
+}
+
 export interface ChooserOptions {
     title: string;
     /** what's there now, as shown */
     current: string | null;
     /** how it's read: IV, ♭VII in G */
     reading?: string;
-    groups: OptionGroup[];
+    groups: ChoiceGroup[];
     /** an option in context */
     hear: (chord: string) => void;
     /** the same spot as it is now, to compare against */

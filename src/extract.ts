@@ -1,7 +1,7 @@
 // Any chord page's HTML → the song, without the page around it
 
-import { isChord, isChordLineFiller } from './chord.ts';
-import { shiftKey } from './transpose.ts';
+import { isChord, isChordLineFiller } from './music/chord.ts';
+import { shiftKey } from './music/theory.ts';
 import { readUltimateGuitar, type SongSource } from './ug.ts';
 
 const JUNK =

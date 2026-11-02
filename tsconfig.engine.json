@@ -1,0 +1,13 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "lib": ["ES2022"],
+        "types": [],
+        "composite": true,
+        "noEmit": false,
+        "emitDeclarationOnly": true,
+        "outDir": "node_modules/.cache/engine",
+        "tsBuildInfoFile": "node_modules/.cache/engine/tsbuildinfo"
+    },
+    "include": ["src/engine", "src/music"]
+}

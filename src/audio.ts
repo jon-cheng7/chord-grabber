@@ -1,6 +1,6 @@
 // Chord sound: a handful of small synths, voice-led from chord to chord
 
-import { chordNotes } from './reharm.ts';
+import { chordNotes } from './music/theory.ts';
 
 let ctx: AudioContext | null = null;
 let out: AudioNode | null = null;

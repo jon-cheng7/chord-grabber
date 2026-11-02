@@ -1,6 +1,6 @@
 // Chord sheet text → lines of chords and lyrics
 
-import { isChord, isChordLineFiller } from './chord.ts';
+import { isChord, isChordLineFiller } from './music/chord.ts';
 
 /** a chord sitting over the start of text; text may be empty */
 export interface Piece {

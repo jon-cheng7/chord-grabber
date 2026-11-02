@@ -2,11 +2,13 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { rankKeys, songKey } from './key.ts';
+import { rankKeys } from './engine/index.ts';
 import { parseSheet } from './parse.ts';
+import { sheetKey, sheetSlots } from './reharm.ts';
 
 const sheet = (...parts: string[]) => parseSheet(parts.join('\n'));
-const best = (...parts: string[]) => rankKeys(sheet(...parts))[0]?.key;
+const best = (...parts: string[]) =>
+    rankKeys(sheetSlots(sheet(...parts)))[0]?.key;
 
 test('major loop', () => {
     assert.equal(
@@ -42,16 +44,16 @@ test('sus, slash and bar chords count', () => {
 });
 
 test('page key wins', () => {
-    assert.equal(songKey('Em', sheet('G C D G', 'G C D G')), 'Em');
+    assert.equal(sheetKey('Em', sheet('G C D G', 'G C D G')), 'Em');
 });
 
 test('capo: Bb with capo 3 is written in G', () => {
     const lines = sheet('G C D G', 'Em C D G');
-    assert.equal(songKey('Bb', lines, 3), 'G');
-    assert.equal(songKey(null, lines, 3), 'G');
+    assert.equal(sheetKey('Bb', lines, 3), 'G');
+    assert.equal(sheetKey(null, lines, 3), 'G');
 });
 
 test('no chords: the page key or nothing', () => {
-    assert.equal(songKey('E', sheet('just words here')), 'E');
-    assert.equal(songKey(null, sheet('just words here')), null);
+    assert.equal(sheetKey('E', sheet('just words here')), 'E');
+    assert.equal(sheetKey(null, sheet('just words here')), null);
 });

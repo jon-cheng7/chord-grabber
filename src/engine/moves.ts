@@ -1,32 +1,16 @@
 // Moves: when a pick changes what a chord does, a few ways for its neighbours to follow.
-// The pick is fixed; only the chords either side (same section, not edited by you) may change
+// The pick is fixed; only the chords either side (same section, not locked) may change
 
-import { parseChord } from './chord.ts';
+import { parseChord } from '../music/chord.ts';
 import {
-    classify,
-    isMinorKey,
-    tonicOf,
-    type Harmony,
-    type Profile,
-    type Reading,
-} from './harmony.ts';
-import { chordNotes } from './reharm.ts';
-import { mod, noteName, pitch, simplifyChord } from './transpose.ts';
-
-export interface Change {
-    row: number;
-    piece: number;
-    chord: string;
-}
-
-export interface Direction {
-    name: string;
-    why: string;
-    /** the neighbours it rewrites; the pick itself isn't one */
-    changes: Change[];
-    /** the chords around the pick, as they'd play */
-    window: string[];
-}
+    chordNotes,
+    mod,
+    noteName,
+    pitch,
+    simplifyChord,
+} from '../music/theory.ts';
+import { classify, isMinorKey, tonicOf } from './analysis.ts';
+import type { Direction, Profile, Reading, Why } from './types.ts';
 
 const MAX = 3;
 
@@ -52,6 +36,7 @@ const MINOR_STEPS: Record<number, string> = {
 
 const rootOf = (chord: string): number => pitch(parseChord(chord)?.root ?? 'C');
 const plain = (chord: string): string => chord.replace(/\/.*$/, '');
+const ch = (chord: string) => ({ chord });
 
 /**
  * does the pick change what the chord does here (borrowed, a new pull,
@@ -72,25 +57,21 @@ export function reaches(
 
 /** ways to make the chords around a pick agree with it, most telling first */
 export function followUps(
-    h: Harmony,
+    readings: readonly Reading[],
     here: Reading,
     picked: string,
-    locked: (row: number, piece: number) => boolean,
     flats: boolean,
     profile: Profile,
-    /** a chord as the reader sees it: transposed, capo shapes */
-    say: (chord: string) => string,
 ): Direction[] {
-    const i = h.readings.indexOf(here);
+    const i = readings.indexOf(here);
     const near = (j: number): Reading | null => {
-        const r = h.readings[j];
-        return r && r.block === here.block ? r : null;
+        const r = readings[j];
+        return r && r.section === here.section ? r : null;
     };
     const prev = near(i - 1);
     const next = near(i + 1);
     const after = near(i + 2);
-    const open = (r: Reading | null): r is Reading =>
-        !!r && !locked(r.row, r.piece);
+    const open = (r: Reading | null): r is Reading => !!r && !r.locked;
 
     const key = here.key;
     const tonic = tonicOf(key);
@@ -104,7 +85,7 @@ export function followUps(
     const it = classify(picked, key, next?.chord ?? null);
 
     const out: Direction[] = [];
-    const add = (name: string, why: string, swaps: [Reading, string][]) => {
+    const add = (name: string, why: Why, swaps: [Reading, string][]) => {
         const real = swaps.filter(([r, c]) => c !== r.chord);
         if (!real.length || out.some((d) => d.name === name)) return;
         const swap = new Map(real);
@@ -114,11 +95,7 @@ export function followUps(
         out.push({
             name,
             why,
-            changes: real.map(([r, chord]) => ({
-                row: r.row,
-                piece: r.piece,
-                chord,
-            })),
+            changes: real.map(([r, chord]) => ({ id: r.id, chord })),
             window,
         });
     };
@@ -130,9 +107,11 @@ export function followUps(
         const target = mod(dim || tritone ? root + (dim ? 1 : -1) : root + 5);
         const landing = onStep(mod(target - tonic));
         if (open(next) && rootOf(next.chord) !== target)
-            add('Land it', `${say(picked)} wants to land on ${say(landing)}`, [
-                [next, landing],
-            ]);
+            add(
+                'Land it',
+                [ch(picked), ' wants to land on ', ch(landing)],
+                [[next, landing]],
+            );
         else if (
             open(prev) &&
             !dim &&
@@ -140,32 +119,35 @@ export function followUps(
             rootOf(prev.chord) !== mod(root + 7)
         ) {
             const ii = `${n(root + 7)}${/m$/.test(simplifyChord(landing)) ? 'm7b5' : 'm7'}`;
-            add('ii–V', `${say(ii)} sets up ${say(picked)}: a stronger push`, [
-                [prev, ii],
-            ]);
+            add(
+                'ii–V',
+                [ch(ii), ' sets up ', ch(picked), ': a stronger push'],
+                [[prev, ii]],
+            );
         }
     }
 
     // borrowed from the parallel minor, in a major key
     if (!it.diatonic && it.role === 'pre' && !isMinorKey(key)) {
         const home = onStep(0);
+        const flat7 = n(tonic + 10);
         if (it.step === 5 && it.kind === 'm') {
             if (open(prev) && stepOf(prev) !== 5)
                 add(
                     'IV then iv',
-                    `${say(onStep(5))} sinking to ${say(picked)}`,
+                    [ch(onStep(5)), ' sinking to ', ch(picked)],
                     [[prev, onStep(5)]],
                 );
             if (open(next) && stepOf(after) === 0 && stepOf(next) !== 10)
                 add(
                     'Back door',
-                    `${say(picked)} → ${say(`${n(tonic + 10)}7`)} → ${say(home)}`,
-                    [[next, `${n(tonic + 10)}7`]],
+                    [ch(picked), ' → ', ch(`${flat7}7`), ' → ', ch(home)],
+                    [[next, `${flat7}7`]],
                 );
             if (open(next) && next.role === 'dominant' && next.ends)
                 add(
                     'Straight home',
-                    `${say(picked)} → ${say(home)}: a gentle amen`,
+                    [ch(picked), ' → ', ch(home), ': a gentle amen'],
                     [[next, home]],
                 );
         } else if (it.step === 8) {
@@ -176,20 +158,22 @@ export function followUps(
             )
                 add(
                     'Climb home',
-                    `${say(picked)} → ${say(n(tonic + 10))} → ${say(home)}, rising`,
-                    [[next, n(tonic + 10)]],
+                    [ch(picked), ' → ', ch(flat7), ' → ', ch(home), ', rising'],
+                    [[next, flat7]],
                 );
         } else if (it.step === 10) {
             if (open(next) && stepOf(next) !== 0)
                 add(
                     'Into home',
-                    `${say(picked)} rises a step to ${say(home)}`,
+                    [ch(picked), ' rises a step to ', ch(home)],
                     [[next, home]],
                 );
             if (open(prev) && stepOf(prev) !== 8)
-                add('Climb', `${say(n(tonic + 8))} → ${say(picked)}, rising`, [
-                    [prev, n(tonic + 8)],
-                ]);
+                add(
+                    'Climb',
+                    [ch(n(tonic + 8)), ' → ', ch(picked), ', rising'],
+                    [[prev, n(tonic + 8)]],
+                );
         }
     }
 
@@ -207,14 +191,16 @@ export function followUps(
             const base = plain(prev.chord);
             const chord =
                 rootOf(base) === step.t ? base : `${base}/${n(step.t)}`;
-            add('Bass leads in', `the bass steps into ${say(picked)}`, [
-                [prev, chord],
-            ]);
+            add(
+                'Bass leads in',
+                ['the bass steps into ', ch(picked)],
+                [[prev, chord]],
+            );
         }
         if (it.role !== 'dominant' && rootOf(prev.chord) !== mod(root + 7))
             add(
                 'Lead in',
-                `${say(`${n(root + 7)}7`)} pulls into ${say(picked)}`,
+                [ch(`${n(root + 7)}7`), ' pulls into ', ch(picked)],
                 [[prev, `${n(root + 7)}7`]],
             );
     }

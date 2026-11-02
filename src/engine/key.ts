@@ -1,8 +1,11 @@
 // Key from the chords: what's played, where sections start and land, what resolves
 
-import { isChord, parseChord } from './chord.ts';
-import type { Line } from './parse.ts';
-import { minor, mod, pitch, shiftKey } from './transpose.ts';
+import { parseChord } from '../music/chord.ts';
+import { minor, mod, pitch, shiftKey } from '../music/theory.ts';
+import type { Slot } from './types.ts';
+
+/** all key-finding needs from a slot */
+export type KeySlot = Pick<Slot, 'chord' | 'section' | 'starts'>;
 
 type Kind = 'maj' | 'min' | 'dim' | 'open';
 
@@ -44,33 +47,11 @@ function kindOf(quality: string): Kind {
     return 'maj';
 }
 
-/** a line's chords in order */
-function lineChords(line: Line): Heard[] {
-    const names: string[] = [];
-    if (line.kind === 'lyric')
-        for (const p of line.units.flat()) if (p.chord) names.push(p.chord);
-    if (line.kind === 'chords')
-        for (const p of line.items) {
-            if (p.chord) names.push(p.chord);
-            // bar notation left as text
-            else
-                for (const t of p.text.split(/[\s|]+/))
-                    if (isChord(t)) names.push(t);
-        }
-    return names
-        .map((n) => parseChord(n))
-        .filter((c) => c !== null)
-        .map((c) => ({
-            root: pitch(c.root),
-            kind: kindOf(c.quality),
-            weight: 1,
-        }));
-}
-
 /** chords weighted by where they fall: phrase and section edges, resolutions */
-function heard(lines: readonly Line[]): Heard[] {
+function heard(slots: readonly KeySlot[]): Heard[] {
     const all: Heard[] = [];
     let section: Heard[] = [];
+    let at: string | null = null;
     const close = (): void => {
         if (!section.length) return;
         section[0]!.weight += 1;
@@ -78,12 +59,16 @@ function heard(lines: readonly Line[]): Heard[] {
         all.push(...section);
         section = [];
     };
-    for (const line of lines) {
-        if (line.kind === 'section') close();
-        const chords = lineChords(line);
+    for (const s of slots) {
+        if (s.section !== at) {
+            close();
+            at = s.section;
+        }
+        const c = parseChord(s.chord);
+        if (!c) continue;
         // phrases tend to start at home
-        if (chords[0]) chords[0].weight += 0.5;
-        section.push(...chords);
+        const weight = s.starts ? 1.5 : 1;
+        section.push({ root: pitch(c.root), kind: kindOf(c.quality), weight });
     }
     close();
     if (!all.length) return all;
@@ -109,9 +94,9 @@ function fit(c: Heard, tonic: number, minorKey: boolean): number {
 
 /** all 24 keys, best first */
 export function rankKeys(
-    lines: readonly Line[],
+    slots: readonly KeySlot[],
 ): { key: string; score: number }[] {
-    const chords = heard(lines);
+    const chords = heard(slots);
     if (!chords.length) return [];
     const keys = Array.from({ length: 24 }, (_, i) => {
         const minorKey = i >= 12;
@@ -128,10 +113,10 @@ export function rankKeys(
 /** the key the chords are written in: the page's without its capo, else what they say */
 export function songKey(
     said: string | null,
-    lines: readonly Line[],
+    slots: readonly KeySlot[],
     capo: number | null = null,
 ): string | null {
     // pages give the key as heard; Bb with capo 3 is G shapes
     if (said && parseChord(said)) return capo ? shiftKey(said, -capo) : said;
-    return rankKeys(lines)[0]?.key ?? null;
+    return rankKeys(slots)[0]?.key ?? null;
 }

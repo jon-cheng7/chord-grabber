@@ -2,7 +2,7 @@
 
 import { arrange, type Sections } from './arrange.ts';
 import type { Line } from './parse.ts';
-import { applyEdits, spots, type Edit } from './reharm.ts';
+import { applyEdits, spots, type Edit } from './edits.ts';
 
 export interface Block {
     id: string;

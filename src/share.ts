@@ -1,6 +1,6 @@
 // Share links: the whole song, squeezed into the link's hash
 
-import type { Edit } from './reharm.ts';
+import type { Edit } from './edits.ts';
 import type { SongSource } from './ug.ts';
 
 export interface Shared {

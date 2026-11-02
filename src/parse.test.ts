@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { isChord } from './chord.ts';
+import { isChord } from './music/chord.ts';
 import { parseSheet, type Line } from './parse.ts';
 
 const flat = (line: Line | undefined) =>

@@ -1,6 +1,6 @@
 // Saved songs, collections and settings, this device only
 
-import type { Edit } from './reharm.ts';
+import type { Edit } from './edits.ts';
 import type { SongSource } from './ug.ts';
 
 export interface Saved extends SongSource {

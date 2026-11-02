@@ -1,35 +1,125 @@
-// Reharm: chord edits as a layer over the sheet, and what to suggest
+// Reharm: the sheet as the engine sees it, and the engine's answers placed back on the sheet
 
-import { parseChord } from './chord.ts';
+import type { Sections } from './arrange.ts';
+import { pieces, spots, type Edit } from './edits.ts';
+import {
+    createEngine,
+    songKey,
+    type Engine,
+    type KeySlot,
+    type Option,
+    type Slot,
+    type Why,
+} from './engine/index.ts';
+import { isChord } from './music/chord.ts';
 import type { Line, Piece } from './parse.ts';
-import { minor, mod, noteName, pitch } from './transpose.ts';
+import type { View } from './view.ts';
 
-/** a chord set on one word; null removes the one that was there */
-export interface Edit {
-    line: number;
-    piece: number;
-    chord: string | null;
-    /** inserted where there was no chord */
-    added?: boolean;
-    /** only this time round the section; absent for every time */
-    occ?: number;
+/** every chord of a sheet as written, bar notation included: enough to find its key */
+export function sheetSlots(lines: readonly Line[]): KeySlot[] {
+    const out: KeySlot[] = [];
+    let section = 0;
+    for (const line of lines) {
+        if (line.kind === 'section') {
+            section++;
+            continue;
+        }
+        const names: string[] = [];
+        if (line.kind === 'lyric')
+            for (const p of line.units.flat()) if (p.chord) names.push(p.chord);
+        if (line.kind === 'chords')
+            for (const p of line.items) {
+                if (p.chord) names.push(p.chord);
+                // bar notation left as text
+                else
+                    for (const t of p.text.split(/[\s|]+/))
+                        if (isChord(t)) names.push(t);
+            }
+        names.forEach((chord, i) =>
+            out.push({ chord, section: String(section), starts: i === 0 }),
+        );
+    }
+    return out;
 }
 
-export interface Option {
-    chord: string;
-    why: string;
+/** the key the chords are written in: the page's without its capo, else what they say */
+export const sheetKey = (
+    said: string | null,
+    lines: readonly Line[],
+    capo: number | null = null,
+): string | null => songKey(said, sheetSlots(lines), capo);
+
+export interface SheetHarmony {
+    engine: Engine;
+    /** a chord's place, as the engine knows it */
+    id(row: number, piece: number): string;
+    /** and back to its place in the view */
+    place(id: string): { row: number; piece: number } | null;
 }
 
-export interface OptionGroup {
-    label: string;
-    options: Option[];
+/**
+ * the view as engine slots: a section per block as played, ids from the sheet's
+ * own line and time round, so they outlast transposing and rearranging
+ */
+export function sheetHarmony(
+    view: View,
+    sections: Sections | null,
+    key: string | null,
+    flats: boolean,
+    edits: readonly Edit[],
+): SheetHarmony {
+    const id = (row: number, piece: number): string =>
+        `${view.origin[row] ?? -1}:${piece}.${view.occ[row] ?? 0}`;
+    // chords you set yourself, this time round or every time
+    const locked = (row: number, piece: number): boolean =>
+        edits.some(
+            (e) =>
+                e.line === view.origin[row] &&
+                e.piece === piece &&
+                (e.occ === undefined || e.occ === view.occ[row]),
+        );
+    const places = new Map<string, { row: number; piece: number }>();
+    const slots: Slot[] = [];
+    view.blocks.forEach((b, block) => {
+        const label = sections?.library.find((s) => s.id === b.id)?.label ?? '';
+        for (let row = b.start; row < b.end; row++) {
+            const line = view.lines[row];
+            if (!line) continue;
+            const ps = pieces(line);
+            const at = ps.flatMap((p, k) => (p.chord ? [k] : []));
+            at.forEach((k, n) => {
+                const text = ps
+                    .slice(k, at[n + 1] ?? ps.length)
+                    .map((p) => p.text)
+                    .join('');
+                const slot = id(row, k);
+                places.set(slot, { row, piece: k });
+                slots.push({
+                    id: slot,
+                    chord: ps[k]!.chord!,
+                    section: String(block),
+                    label,
+                    starts: n === 0,
+                    ends: n === at.length - 1,
+                    held:
+                        line.kind === 'lyric'
+                            ? (text.match(/\S+/g)?.length ?? 0)
+                            : 0,
+                    locked: locked(row, k),
+                });
+            });
+        }
+    });
+    return {
+        engine: createEngine({ key, flats, slots }),
+        id,
+        place: (slot) => places.get(slot) ?? null,
+    };
 }
 
-export interface Spot {
-    line: number;
-    piece: number;
-    chord: string;
-}
+/** an explanation in words, chords named as the reader sees them */
+export const say = (why: Why, name: (chord: string) => string): string =>
+    why.map((p) => (typeof p === 'string' ? p : name(p.chord))).join('');
 
 export interface Gap {
     /** where the passing chord goes */
@@ -41,256 +131,6 @@ export interface Gap {
     score: number;
 }
 
-const pieces = (line: Line): Piece[] =>
-    line.kind === 'lyric'
-        ? line.units.flat()
-        : line.kind === 'chords'
-          ? line.items
-          : [];
-
-export function applyEdits(
-    lines: readonly Line[],
-    edits: readonly Edit[],
-): readonly Line[] {
-    if (!edits.length) return lines;
-    return lines.map((line, i): Line => {
-        const mine = edits.filter((e) => e.line === i);
-        if (!mine.length) return line;
-        const set = (p: Piece, k: number): Piece => {
-            const e = mine.find((m) => m.piece === k);
-            return e ? { ...p, chord: e.chord } : p;
-        };
-        if (line.kind === 'lyric') {
-            let k = 0;
-            const units = line.units.map((u) => u.map((p) => set(p, k++)));
-            const chords = units.some((u) => u.some((p) => p.chord));
-            return { ...line, units, chords };
-        }
-        if (line.kind === 'chords')
-            return { ...line, items: line.items.map((p, k) => set(p, k)) };
-        return line;
-    });
-}
-
-/** every chord in order, with where it sits */
-export function spots(lines: readonly Line[]): Spot[] {
-    const out: Spot[] = [];
-    lines.forEach((line, i) =>
-        pieces(line).forEach((p, k) => {
-            if (p.chord) out.push({ line: i, piece: k, chord: p.chord });
-        }),
-    );
-    return out;
-}
-
-export function chordAt(
-    lines: readonly Line[],
-    line: number,
-    piece: number,
-): string | null {
-    const l = lines[line];
-    return l ? (pieces(l)[piece]?.chord ?? null) : null;
-}
-
-/** pitch classes, bass first */
-export function chordNotes(name: string): { bass: number; tones: number[] } {
-    const c = parseChord(name);
-    if (!c) return { bass: 0, tones: [] };
-    const root = pitch(c.root);
-    const q = c.quality;
-    let third = minor(q) ? 3 : 4;
-    let fifth = 7;
-    if (/dim|°/.test(q)) [third, fifth] = [3, 6];
-    if (/aug|\+/.test(q)) fifth = 8;
-    if (/sus2/.test(q)) third = 2;
-    else if (/sus/.test(q)) third = 5;
-    const tones = new Set([root, root + third, root + fifth].map(mod));
-    if (/maj7|M7|Δ/.test(q)) tones.add(mod(root + 11));
-    else if (/dim7|°7/.test(q)) tones.add(mod(root + 9));
-    else if (/7/.test(q)) tones.add(mod(root + 10));
-    if (/6/.test(q)) tones.add(mod(root + 9));
-    if (/9|add2/.test(q)) tones.add(mod(root + 2));
-    const bass = c.bass ? pitch(c.bass) : root;
-    return { bass, tones: [...tones] };
-}
-
-const shared = (a: string, b: string): number => {
-    const x = chordNotes(a).tones;
-    return chordNotes(b).tones.filter((t) => x.includes(t)).length;
-};
-
-interface KeyInfo {
-    /** the key's own home note: A in A minor, not C */
-    tonic: number;
-    minor: boolean;
-    flats: boolean;
-}
-
-function keyInfo(key: string | null, flats: boolean): KeyInfo | null {
-    const c = key ? parseChord(key) : null;
-    if (!c) return null;
-    return { tonic: pitch(c.root), minor: minor(c.quality), flats };
-}
-
-// triad on each scale step, major and natural minor
-const MAJOR_TRIADS: Record<number, string> = {
-    0: '',
-    2: 'm',
-    4: 'm',
-    5: '',
-    7: '',
-    9: 'm',
-    11: 'dim',
-};
-const MINOR_TRIADS: Record<number, string> = {
-    0: 'm',
-    2: 'dim',
-    3: '',
-    5: 'm',
-    7: 'm',
-    8: '',
-    10: '',
-};
-const triads = (k: KeyInfo): Record<number, string> =>
-    k.minor ? MINOR_TRIADS : MAJOR_TRIADS;
-
-const core = (name: string): string => {
-    const c = parseChord(name);
-    if (!c) return name;
-    const kind = /^(?:dim|°)/.test(c.quality)
-        ? 'dim'
-        : minor(c.quality)
-          ? 'm'
-          : '';
-    return `${c.root}${kind}`;
-};
-
-/** what to swap a chord for, safest first in each group */
-export function suggestFor(
-    name: string,
-    key: string | null,
-    flats: boolean,
-): OptionGroup[] {
-    const c = parseChord(name);
-    if (!c) return [];
-    const k = keyInfo(key, flats);
-    const root = pitch(c.root);
-    const base = core(name);
-    const isMinor = /m$/.test(base);
-    const isDim = /dim$/.test(base);
-    const n = (p: number): string => noteName(p, flats);
-    const deg = (step: number): string =>
-        k ? `${n(k.tonic + step)}${triads(k)[step] ?? ''}` : '';
-    const d = k ? mod(root - k.tonic) : -1;
-
-    const colour: Option[] = isDim
-        ? [{ chord: `${base}7`, why: 'fuller diminished' }]
-        : isMinor
-          ? [
-                { chord: `${base}7`, why: 'softer, jazzier' },
-                { chord: `${base}add9`, why: 'open, airy' },
-                { chord: `${c.root}sus4`, why: 'unresolved' },
-            ]
-          : [
-                { chord: `${base}add9`, why: 'open, airy' },
-                { chord: `${base}sus2`, why: 'open, no third' },
-                { chord: `${base}sus4`, why: 'wants to resolve' },
-                {
-                    chord: d === 7 ? `${base}7` : `${base}maj7`,
-                    why: d === 7 ? 'stronger pull home' : 'warm, dreamy',
-                },
-            ];
-
-    const third = mod(root + (isMinor || isDim ? 3 : 4));
-    const fifth = mod(root + (isDim ? 6 : 7));
-    const bass: Option[] = [
-        { chord: `${base}/${n(third)}`, why: 'third in the bass: smoother' },
-        { chord: `${base}/${n(fifth)}`, why: 'fifth in the bass: floating' },
-    ];
-    if (k && d !== 0)
-        bass.push({ chord: `${base}/${n(k.tonic)}`, why: 'over the home note' });
-
-    const swap: Option[] = [];
-    const borrowed: Option[] = [];
-    const spicy: Option[] = [];
-    if (k) {
-        const add = (list: Option[], step: number, why: string, q?: string) => {
-            const chord = q === undefined ? deg(step) : `${n(k.tonic + step)}${q}`;
-            list.push({ chord, why });
-        };
-        if (k.minor) {
-            // steps from the minor home: i, ii°, III, iv, v / V, VI, VII
-            if (d === 0) {
-                add(swap, 3, 'relative major: same notes, brighter');
-                add(swap, 8, 'shares two notes');
-                add(borrowed, 0, 'major 1: a bright ending', '');
-            } else if (d === 2) {
-                add(swap, 5, 'same job, darker');
-                add(borrowed, 2, 'minor 2: softer lead to 5', 'm');
-            } else if (d === 3) {
-                add(swap, 0, 'relative minor: back home');
-                add(swap, 7, 'shares two notes');
-            } else if (d === 5) {
-                add(swap, 2, 'same job, darker', 'm7b5');
-                add(swap, 8, 'shares two notes');
-                add(borrowed, 5, 'major 4: a lift', '');
-            } else if (d === 7) {
-                if (isMinor) add(borrowed, 7, 'major 5: pulls home harder', '');
-                else add(swap, 7, 'minor 5: softer, modal', 'm');
-                add(swap, 10, '♭7: a modal way home', '');
-                add(spicy, 1, 'tritone sub: slides home', '7');
-            } else if (d === 8) {
-                add(swap, 5, 'shares two notes');
-                add(swap, 0, 'shares two notes');
-            } else if (d === 10) {
-                add(swap, 7, 'shares two notes');
-            }
-        } else if (d === 0) {
-            add(swap, 9, 'relative minor: same feel, sadder');
-            add(swap, 4, 'shares two notes');
-        } else if (d === 2) {
-            add(swap, 5, 'same job, brighter');
-            add(borrowed, 2, 'major 2: pushes to 5', '');
-        } else if (d === 4) {
-            add(swap, 0, 'shares two notes');
-            add(borrowed, 4, 'major 3: leads to 6m', '');
-        } else if (d === 5) {
-            add(swap, 2, 'same job, softer');
-            add(swap, 9, 'shares two notes');
-            add(borrowed, 5, 'minor 4: bittersweet', 'm');
-            add(borrowed, 10, '♭7: borrowed lift', '');
-        } else if (d === 7) {
-            add(swap, 4, 'shares two notes');
-            add(borrowed, 10, '♭7: softer way home', '');
-            add(spicy, 1, 'tritone sub: slides home', '7');
-        } else if (d === 9) {
-            add(swap, 0, 'same feel, brighter');
-            add(swap, 5, 'shares two notes');
-            add(borrowed, 8, '♭6: bigger, cinematic', '');
-        }
-        if (d !== 7 && !isDim)
-            spicy.push({ chord: `${n(root)}7`, why: 'dominant: pulls a 4th up' });
-    }
-
-    const rank = (list: Option[]): Option[] => {
-        const seen = new Set([name]);
-        return list
-            .filter((o) => {
-                if (seen.has(o.chord)) return false;
-                seen.add(o.chord);
-                return true;
-            })
-            .sort((a, b) => shared(name, b.chord) - shared(name, a.chord));
-    };
-    return [
-        { label: 'COLOUR', options: rank(colour) },
-        { label: 'BASS', options: rank(bass) },
-        { label: 'SWAP', options: rank(swap) },
-        { label: 'BORROWED', options: rank(borrowed) },
-        { label: 'SPICY', options: rank(spicy) },
-    ].filter((g) => g.options.length);
-}
-
 // fewer, better: a gap needs room, a reason, and somewhere to land
 const MIN_WORDS = 3;
 const MAX_CHANGES = 3;
@@ -299,12 +139,8 @@ const THRESHOLD = 0.35;
 const words = (line: Line): Piece[] =>
     line.kind === 'lyric' ? line.units.flat() : [];
 
-/** passing chords worth offering: at most one per line; keyAt gives each row's key */
-export function passingGaps(
-    lines: readonly Line[],
-    keyAt: (line: number) => string | null,
-    flats: boolean,
-): Gap[] {
+/** passing chords worth offering, at most one per line; the engine says what, the words say where */
+export function passingGaps(lines: readonly Line[], h: SheetHarmony): Gap[] {
     const all = spots(lines);
     const best = new Map<number, Gap>();
 
@@ -322,7 +158,7 @@ export function passingGaps(
         const room = at - a.piece + 1;
         if (room < MIN_WORDS || at <= a.piece) return;
 
-        const pass = passing(a.chord, b.chord, keyAt(b.line), flats);
+        const pass = h.engine.between(a.chord, b.chord, h.id(b.line, b.piece));
         if (!pass) return;
         const { options, fit } = pass;
         // a walking bass sits halfway along, the rest just before the change
@@ -333,81 +169,16 @@ export function passingGaps(
         if (score < THRESHOLD) return;
         if (place <= a.piece) place = at;
         if (ws[place]?.chord) return;
-        const gap = { line: a.line, piece: place, from: a.chord, to: b.chord, options, score };
+        const gap = {
+            line: a.line,
+            piece: place,
+            from: a.chord,
+            to: b.chord,
+            options,
+            score,
+        };
         const had = best.get(a.line);
         if (!had || had.score < score) best.set(a.line, gap);
     });
     return [...best.values()];
-}
-
-/** chords that lead from one to the next, and how well they fit */
-export function passing(
-    from: string,
-    to: string,
-    key: string | null,
-    flats: boolean,
-): { options: Option[]; fit: number; walk: boolean } | null {
-    const ca = parseChord(from);
-    const cb = parseChord(to);
-    if (!ca || !cb) return null;
-    const k = keyInfo(key, flats);
-    const n = (p: number): string => noteName(p, flats);
-    const ra = pitch(ca.root);
-    const rb = pitch(cb.root);
-    const step = mod(rb - ra);
-    const options: Option[] = [];
-    let fit = 0;
-    let walk = false;
-    if (step === 2) {
-        options.push({ chord: `${n(ra + 1)}dim`, why: 'chromatic step up' });
-        fit = 1;
-    } else if (step === 10) {
-        options.push({
-            chord: `${core(from)}/${n(ra - 1)}`,
-            why: 'bass steps down',
-        });
-        fit = 0.9;
-    } else if (step === 8 || step === 9) {
-        // walk the bass down a third through the note between
-        const mid = mod(ra - (step === 9 ? 1 : 2));
-        // the key's own chords, dominant and home first
-        const order = k?.minor ? [7, 0, 3, 5, 8, 10] : [7, 0, 2, 4, 5, 9];
-        const over = k
-            ? order
-                  .map((s) => `${n(k.tonic + s)}${triads(k)[s]}`)
-                  .find((ch) => chordNotes(ch).tones.includes(mid))
-            : null;
-        if (over) {
-            const onRoot = chordNotes(over).bass === mid;
-            options.push({
-                chord: onRoot ? over : `${over}/${n(mid)}`,
-                why: 'bass walks down',
-            });
-            fit = 0.9;
-            walk = true;
-        }
-    } else if (step === 3 || step === 4) {
-        options.push({
-            chord: `${core(from)}/${n(ra + 2)}`,
-            why: 'bass walks up',
-        });
-        fit = 0.8;
-        walk = true;
-    } else if (step === 5) {
-        const third = mod(ra + (/m$/.test(core(from)) ? 3 : 4));
-        options.push({ chord: `${core(from)}/${n(third)}`, why: 'bass walks up' });
-        fit = 0.8;
-    } else if (step === 0) {
-        options.push({ chord: `${ca.root}sus4`, why: 'a lift and back' });
-        options.push({ chord: `${n(ra + 5)}/${n(ra)}`, why: '4 over the same bass' });
-        fit = 0.6;
-    }
-    // a lead-in works into almost anything but home
-    const lead = `${n(rb + 7)}7`;
-    const home = k && rb === k.tonic && /m$/.test(core(to)) === k.minor;
-    if (!home && lead !== from) {
-        options.push({ chord: lead, why: `lead-in: pulls to ${to}` });
-        fit = Math.max(fit, 0.7);
-    }
-    return options.length ? { options, fit, walk } : null;
 }

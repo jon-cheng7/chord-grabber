@@ -8,7 +8,7 @@
     },
     "scripts": {
         "dev": "vite --host",
-        "build": "tsc --noEmit && vite build",
+        "build": "tsc --noEmit && tsc -p tsconfig.engine.json && vite build",
         "preview": "vite preview --host",
         "test": "node --test \"src/**/*.test.ts\"",
         "format": "prettier --write ."

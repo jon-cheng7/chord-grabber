@@ -2,8 +2,8 @@
 
 import { collapse, popIn, popOut, rise, sheetIn, sheetOut } from './animate.ts';
 import { exportCollection, exportSong, importFiles } from './files.ts';
-import { songKey } from './key.ts';
 import { parseSheet } from './parse.ts';
+import { sheetKey } from './reharm.ts';
 import {
     addCollection,
     collections,
@@ -51,7 +51,7 @@ const keyOf = (s: Saved): string => {
     let k = keys.get(s.id);
     if (k === undefined) {
         k =
-            songKey(s.key, parseSheet(s.sheet), s.capo) ??
+            sheetKey(s.key, parseSheet(s.sheet), s.capo) ??
             s.title.slice(0, 1).toUpperCase();
         keys.set(s.id, k);
     }

@@ -13,22 +13,28 @@ import {
 import { findSections } from './arrange.ts';
 import { closeEditor, openEditor, sheetText } from './editor.ts';
 import { closeArranger, openArranger } from './arranger.ts';
-import { closeChooser, openChooser } from './chooser.ts';
+import { closeChooser, openChooser, type ChoiceGroup } from './chooser.ts';
+import { chordAt, spots, type Edit } from './edits.ts';
+import type { OptionGroup } from './engine/index.ts';
 import { exportSong } from './files.ts';
-import { analyze, fromSong, styled, type Harmony } from './harmony.ts';
-import { followUps, reaches, type Change } from './moves.ts';
-import { songKey } from './key.ts';
+import {
+    keyDistance,
+    numberChord,
+    shiftKey,
+    simplifyChord,
+    transposeChord,
+    usesFlats,
+} from './music/theory.ts';
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
 import { toast } from './toast.ts';
 import {
-    chordAt,
-    passing,
     passingGaps,
-    spots,
-    suggestFor,
-    type Edit,
-    type OptionGroup,
+    say,
+    sheetHarmony,
+    sheetKey,
+    type Gap,
+    type SheetHarmony,
 } from './reharm.ts';
 import { renderSheet } from './render.ts';
 import {
@@ -51,17 +57,7 @@ import {
     textSize,
     type Saved,
 } from './store.ts';
-import {
-    keyDistance,
-    shiftKey,
-    numberChord,
-    numberLines,
-    simplifyChord,
-    simplifyLines,
-    transposeChord,
-    transposeLines,
-    usesFlats,
-} from './transpose.ts';
+import { numberLines, simplifyLines, transposeLines } from './transpose.ts';
 
 const MIN_SIZE = 12;
 const MAX_SIZE = 30;
@@ -148,7 +144,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
 
     const lines = parseSheet(s.sheet);
     // the key as written, never as heard with a capo
-    const written = songKey(s.key, lines, s.capo);
+    const written = sheetKey(s.key, lines, s.capo);
     let shift = s.shift ?? 0;
     let capo = s.fret ?? 0;
     let simple = pref<boolean>('cg-simple', false);
@@ -188,8 +184,15 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             edits,
         );
     // what each chord is doing: worked out only when reharm asks, once per redraw
-    let harmony: Harmony | null = null;
-    const reading = (): Harmony => (harmony ??= analyze(current(), written));
+    let harmony: SheetHarmony | null = null;
+    const reading = (): SheetHarmony =>
+        (harmony ??= sheetHarmony(
+            current(),
+            arrangeable ? sections : null,
+            written,
+            writtenFlats,
+            edits,
+        ));
     // reharm shows the chords as they are, to edit them
     const simpleNow = (): boolean => simple && !reharm;
     const numbersNow = (): boolean => numbers && !reharm && written !== null;
@@ -756,7 +759,6 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         draw();
         relink();
     };
-    /** row:piece as drawn; the edit belongs to that time round the section */
     /** edits with one more chord set at row:piece, for this time round */
     const withAt = (
         list: Edit[],
@@ -784,21 +786,15 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const setAt = (row: number, piece: number, chord: string | null) =>
         saveEdits(withAt(edits, current(), { row, piece, chord }));
     /** a pick and the chords that follow it: one change, one undo */
-    const setMany = (changes: Change[]): void => {
+    const setMany = (
+        changes: { row: number; piece: number; chord: string }[],
+    ): void => {
         const v = current();
         saveEdits(
             changes.reduce((list, c) => withAt(list, v, c), edits),
             'Reharm move',
         );
     };
-    /** chords you set yourself: follow-ups leave them alone */
-    const locked = (v: SheetView) => (row: number, piece: number) =>
-        edits.some(
-            (e) =>
-                e.line === v.origin[row] &&
-                e.piece === piece &&
-                (e.occ === undefined || e.occ === v.occ[row]),
-        );
     const neighbours = (
         row: number,
         piece: number,
@@ -822,12 +818,16 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             );
         return { hear: (c: string) => around(c), asIs: around };
     };
-    const showGroups = (groups: OptionGroup[]): OptionGroup[] =>
+    /** the engine's options as the reader sees them */
+    const showGroups = (groups: OptionGroup[]): ChoiceGroup[] =>
         groups.map((g) => ({
-            ...g,
-            options: g.options.map((o) => ({ ...o, chord: show(o.chord) })),
+            label: g.label,
+            options: g.options.map((o) => ({
+                chord: show(o.chord),
+                why: say(o.why, show),
+            })),
         }));
-    let gaps: ReturnType<typeof passingGaps> = [];
+    let gaps: Gap[] = [];
     const slotAt = (row: number, piece: number): Element | null => {
         const node = sheet.querySelector(`[data-at="${row}:${piece}"]`);
         if (!node) return null;
@@ -865,7 +865,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             ghost.setAttribute('aria-label', `Bring back ${show(chord)}`);
             slot.append(ghost);
         }
-        gaps = passingGaps(v.lines, reading().keyAt, writtenFlats);
+        gaps = passingGaps(v.lines, reading());
         for (const g of gaps) {
             const slot = slotAt(g.line, g.piece);
             if (!slot || slot.textContent) continue;
@@ -929,35 +929,16 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         }
         const original = chordAt(v.raw, row, piece);
         const h = reading();
-        const here = h.at(row, piece);
-        const key = h.keyAt(row);
+        const id = h.id(row, piece);
+        const here = h.engine.read(id);
         // an added chord stays a passing chord: only passing options
         const [before, after] = neighbours(row, piece);
         const around = inPlace(before, after);
         const pass =
             original === null && before && after
-                ? passing(before, after, key, writtenFlats)
+                ? h.engine.between(before, after, id)
                 : null;
-        // from the sheet's own chord, so edits don't drift ever further
         const source = original ?? now;
-        const label = (block: number): string =>
-            sections.library.find((x) => x.id === v.blocks[block]?.id)?.label ??
-            '';
-        const offered = (): OptionGroup[] => {
-            const groups = styled(
-                suggestFor(source, key, writtenFlats),
-                h.profile,
-            );
-            const song = here && fromSong(h, here, source, label, writtenFlats);
-            if (!song) return groups;
-            const taken = new Set(
-                groups.flatMap((g) => g.options.map((o) => o.chord)),
-            );
-            const fresh = song.options.filter((o) => !taken.has(o.chord));
-            return fresh.length
-                ? [{ ...song, options: fresh }, ...groups]
-                : groups;
-        };
         const homeKey = written && shiftKey(written, 0);
         openChooser({
             title: pass
@@ -970,32 +951,29 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                     : `${here.numeral} in ${show(here.key)}`
                 : undefined,
             groups: showGroups(
-                pass ? [{ label: 'TRY', options: pass.options }] : offered(),
+                pass
+                    ? [{ label: 'TRY', options: pass.options }]
+                    : h.engine.suggest(id, source),
             ),
             hear: around.hear,
             compare: () => around.asIs(show(now)),
             choose: (c) => setAt(row, piece, store(c)),
             follow: (c) => {
                 const chord = store(c);
-                if (pass || !here) return [];
-                const i = h.readings.indexOf(here);
-                const next = h.readings[i + 1];
-                const after = next?.block === here.block ? next.chord : null;
-                if (!reaches(source, chord, here, after)) return [];
-                return followUps(
-                    h,
-                    here,
-                    chord,
-                    locked(v),
-                    writtenFlats,
-                    h.profile,
-                    show,
-                ).map((w) => ({
+                if (pass || !h.engine.reaches(id, source, chord)) return [];
+                return h.engine.followUps(id, chord).map((w) => ({
                     label: w.name,
-                    why: w.why,
+                    why: say(w.why, show),
                     chords: w.window.map(show).join(' → '),
                     hear: () => playChords(w.window.map((x) => sound(show(x)))),
-                    apply: () => setMany([{ row, piece, chord }, ...w.changes]),
+                    apply: () =>
+                        setMany([
+                            { row, piece, chord },
+                            ...w.changes.flatMap((x) => {
+                                const at = h.place(x.id);
+                                return at ? [{ ...at, chord: x.chord }] : [];
+                            }),
+                        ]),
                 }));
             },
             revert:
