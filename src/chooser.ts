@@ -9,7 +9,10 @@ export interface ChooserOptions {
     /** what's there now, as shown */
     current: string | null;
     groups: OptionGroup[];
+    /** an option in context */
     hear: (chord: string) => void;
+    /** the same spot as it is now, to compare against */
+    compare?: () => void;
     /** only on DONE */
     choose: (chord: string) => void;
     /** back to what the sheet had */
@@ -64,7 +67,15 @@ export function openChooser(o: ChooserOptions): void {
     const head = el('div', 'cg-chooser-head');
     const titles = el('div', 'cg-chooser-titles');
     titles.append(el('p', 'cg-chooser-title', o.title));
-    if (o.current)
+    if (o.compare) {
+        const ab = button(
+            `▶ ${o.current ? `Now: ${o.current}` : 'As written'}`,
+            o.compare,
+            'cg-chooser-now cg-chooser-ab',
+        );
+        ab.setAttribute('aria-label', 'Hear it as it is now');
+        titles.append(ab);
+    } else if (o.current)
         titles.append(el('p', 'cg-chooser-now', `Now: ${o.current}`));
     head.append(titles, button('×', closeChooser, 'cg-icon'));
     box.append(head);

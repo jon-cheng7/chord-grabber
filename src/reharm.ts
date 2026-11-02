@@ -120,20 +120,20 @@ const shared = (a: string, b: string): number => {
 };
 
 interface KeyInfo {
-    /** major tonic, the relative major for a minor key */
+    /** the key's own home note: A in A minor, not C */
     tonic: number;
+    minor: boolean;
     flats: boolean;
 }
 
 function keyInfo(key: string | null, flats: boolean): KeyInfo | null {
     const c = key ? parseChord(key) : null;
     if (!c) return null;
-    const root = pitch(c.root);
-    return { tonic: minor(c.quality) ? mod(root + 3) : root, flats };
+    return { tonic: pitch(c.root), minor: minor(c.quality), flats };
 }
 
-// triad on each major scale step
-const DIATONIC: Record<number, string> = {
+// triad on each scale step, major and natural minor
+const MAJOR_TRIADS: Record<number, string> = {
     0: '',
     2: 'm',
     4: 'm',
@@ -142,6 +142,17 @@ const DIATONIC: Record<number, string> = {
     9: 'm',
     11: 'dim',
 };
+const MINOR_TRIADS: Record<number, string> = {
+    0: 'm',
+    2: 'dim',
+    3: '',
+    5: 'm',
+    7: 'm',
+    8: '',
+    10: '',
+};
+const triads = (k: KeyInfo): Record<number, string> =>
+    k.minor ? MINOR_TRIADS : MAJOR_TRIADS;
 
 const core = (name: string): string => {
     const c = parseChord(name);
@@ -169,7 +180,7 @@ export function suggestFor(
     const isDim = /dim$/.test(base);
     const n = (p: number): string => noteName(p, flats);
     const deg = (step: number): string =>
-        k ? `${n(k.tonic + step)}${DIATONIC[step] ?? ''}` : '';
+        k ? `${n(k.tonic + step)}${triads(k)[step] ?? ''}` : '';
     const d = k ? mod(root - k.tonic) : -1;
 
     const colour: Option[] = isDim
@@ -207,7 +218,34 @@ export function suggestFor(
             const chord = q === undefined ? deg(step) : `${n(k.tonic + step)}${q}`;
             list.push({ chord, why });
         };
-        if (d === 0) {
+        if (k.minor) {
+            // steps from the minor home: i, ii°, III, iv, v / V, VI, VII
+            if (d === 0) {
+                add(swap, 3, 'relative major: same notes, brighter');
+                add(swap, 8, 'shares two notes');
+                add(borrowed, 0, 'major 1: a bright ending', '');
+            } else if (d === 2) {
+                add(swap, 5, 'same job, darker');
+                add(borrowed, 2, 'minor 2: softer lead to 5', 'm');
+            } else if (d === 3) {
+                add(swap, 0, 'relative minor: back home');
+                add(swap, 7, 'shares two notes');
+            } else if (d === 5) {
+                add(swap, 2, 'same job, darker', 'm7b5');
+                add(swap, 8, 'shares two notes');
+                add(borrowed, 5, 'major 4: a lift', '');
+            } else if (d === 7) {
+                if (isMinor) add(borrowed, 7, 'major 5: pulls home harder', '');
+                else add(swap, 7, 'minor 5: softer, modal', 'm');
+                add(swap, 10, '♭7: a modal way home', '');
+                add(spicy, 1, 'tritone sub: slides home', '7');
+            } else if (d === 8) {
+                add(swap, 5, 'shares two notes');
+                add(swap, 0, 'shares two notes');
+            } else if (d === 10) {
+                add(swap, 7, 'shares two notes');
+            }
+        } else if (d === 0) {
             add(swap, 9, 'relative minor: same feel, sadder');
             add(swap, 4, 'shares two notes');
         } else if (d === 2) {
@@ -332,9 +370,11 @@ export function passing(
     } else if (step === 8 || step === 9) {
         // walk the bass down a third through the note between
         const mid = mod(ra - (step === 9 ? 1 : 2));
+        // the key's own chords, dominant and home first
+        const order = k?.minor ? [7, 0, 3, 5, 8, 10] : [7, 0, 2, 4, 5, 9];
         const over = k
-            ? [7, 0, 2, 4, 5, 9]
-                  .map((s) => `${n(k.tonic + s)}${DIATONIC[s]}`)
+            ? order
+                  .map((s) => `${n(k.tonic + s)}${triads(k)[s]}`)
                   .find((ch) => chordNotes(ch).tones.includes(mid))
             : null;
         if (over) {
@@ -364,7 +404,7 @@ export function passing(
     }
     // a lead-in works into almost anything but home
     const lead = `${n(rb + 7)}7`;
-    const home = k && rb === k.tonic && !/m$/.test(core(to));
+    const home = k && rb === k.tonic && /m$/.test(core(to)) === k.minor;
     if (!home && lead !== from) {
         options.push({ chord: lead, why: `lead-in: pulls to ${to}` });
         fit = Math.max(fit, 0.7);

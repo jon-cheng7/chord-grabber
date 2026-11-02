@@ -784,6 +784,16 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         );
         return [before?.chord ?? null, after?.chord ?? null];
     };
+    /** heard where it sits: the chord before, then it, then the chord after */
+    const inPlace = (before: string | null, after: string | null) => {
+        const around = (c: string | null): void =>
+            playChords(
+                [before && show(before), c, after && show(after)]
+                    .filter((x): x is string => !!x)
+                    .map(sound),
+            );
+        return { hear: (c: string) => around(c), asIs: around };
+    };
     const showGroups = (groups: OptionGroup[]): OptionGroup[] =>
         groups.map((g) => ({
             ...g,
@@ -846,8 +856,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             const [row, piece] = parseAt(ghost.dataset.at);
             const original = chordAt(v.raw, row, piece);
             if (original) {
+                const [before, after] = neighbours(row, piece);
                 setAt(row, piece, original);
-                playChords([sound(show(original))]);
+                inPlace(before, after).hear(show(original));
             }
             return true;
         }
@@ -856,11 +867,13 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             const [row, piece] = parseAt(plus.dataset.gap);
             const g = gaps.find((x) => x.line === row && x.piece === piece);
             if (!g) return true;
+            const around = inPlace(g.from, g.to);
             openChooser({
                 title: `Passing chord: ${show(g.from)} → ${show(g.to)}`,
                 current: null,
                 groups: showGroups([{ label: 'TRY', options: g.options }]),
-                hear: (c) => playChords([sound(c)]),
+                hear: around.hear,
+                compare: () => around.asIs(null),
                 choose: (c) => setAt(row, piece, store(c)),
             });
             return true;
@@ -875,11 +888,13 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             // a bare word: your own chord only, no suggestions
             const word = node.textContent?.trim();
             if (!word) return false;
+            const around = inPlace(...neighbours(row, piece));
             openChooser({
                 title: `Add a chord on “${word}”`,
                 current: null,
                 groups: [],
-                hear: (c) => playChords([sound(c)]),
+                hear: around.hear,
+                compare: () => around.asIs(null),
                 choose: (c) => setAt(row, piece, store(c)),
             });
             return true;
@@ -887,6 +902,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         const original = chordAt(v.raw, row, piece);
         // an added chord stays a passing chord: only passing options
         const [before, after] = neighbours(row, piece);
+        const around = inPlace(before, after);
         const pass =
             original === null && before && after
                 ? passing(before, after, written, writtenFlats)
@@ -902,7 +918,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                     : // from the sheet's own chord, so edits don't drift ever further
                       suggestFor(original ?? now, written, writtenFlats),
             ),
-            hear: (c) => playChords([sound(c)]),
+            hear: around.hear,
+            compare: () => around.asIs(show(now)),
             choose: (c) => setAt(row, piece, store(c)),
             revert:
                 original && original !== now

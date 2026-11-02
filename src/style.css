@@ -1234,6 +1234,20 @@ body:has(.cg-has-stepbar) .cg-toast {
     font: 400 0.75rem var(--cg-mono);
 }
 
+/* tap to hear the spot as it is, between tries */
+.cg-chooser-ab {
+    display: block;
+    padding: 0.2rem 0;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+.cg-chooser-ab:active {
+    color: var(--cg-accent);
+}
+
 /* what's on the sheet now */
 .cg-chip-current {
     border-style: dashed;
