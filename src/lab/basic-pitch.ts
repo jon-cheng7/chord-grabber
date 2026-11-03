@@ -4,8 +4,8 @@
 import modelUrl from '@spotify/basic-pitch/model/model.json?url';
 import type { Note } from '../listen/summary.ts';
 
-// a voice, low male to soprano: anything outside is an overtone or noise
-const MIN_HZ = 70;
+// a voice, low bass to soprano: anything outside is an overtone or noise
+const MIN_HZ = 50;
 const MAX_HZ = 1000;
 // the model's own defaults for sung lines, a little more willing to start notes
 const ONSET = 0.25;

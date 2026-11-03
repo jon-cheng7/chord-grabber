@@ -6,8 +6,9 @@ export interface Pitch {
     clarity: number;
 }
 
-// a sung or hummed voice, low male to high soprano
-export const MIN_HZ = 70;
+// a sung or hummed voice, low bass (G1) to high soprano; any lower and a
+// 64 ms frame holds too few periods to trust
+export const MIN_HZ = 50;
 export const MAX_HZ = 1000;
 // quieter than this is breath or room, not a note
 const SILENCE_RMS = 0.01;

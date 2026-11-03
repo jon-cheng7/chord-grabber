@@ -26,9 +26,9 @@ import {
     type Take,
 } from './takes.ts';
 
-// the trace: the last few seconds, low male to high soprano
+// the trace: the last few seconds, low bass to high soprano
 const WINDOW = 6;
-const LOW = 40;
+const LOW = 28;
 const HIGH = 84;
 const CLEAR = 0.8;
 
