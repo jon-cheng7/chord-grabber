@@ -1,9 +1,13 @@
-// Pitch of one frame of a single voice: YIN (de Cheveigné & Kawahara, 2002)
+// Pitch of one frame of a single voice: YIN (de Cheveigné & Kawahara, 2002), with pYIN's
+// candidates (Mauch & Dixon, 2014): every likely pitch and how likely, for smooth.ts to choose from
 
 export interface Pitch {
+    /** YIN's own pick; 0 when nothing clears its threshold */
     hz: number;
     /** 0–1: how cleanly periodic the frame is; singing sits well above 0.8 */
     clarity: number;
+    /** likely pitches, flat as hz, probability, hz, probability… */
+    cands: number[];
 }
 
 // a sung or hummed voice, low bass (G1) to high soprano; any lower and a
@@ -14,8 +18,23 @@ export const MAX_HZ = 1000;
 const SILENCE_RMS = 0.01;
 // the dip a period has to reach to count; lower is stricter
 const THRESHOLD = 0.15;
+// candidates kept per frame
+const MAX_CANDS = 4;
 
-/** null for silence or anything without a clear period */
+/**
+ * pYIN: rather than one threshold, many, weighted by a Beta(2, 11.3) prior
+ * (mean 0.15). A dip's probability is the weight of the thresholds that pick it
+ */
+const PRIOR = (() => {
+    const w = Array.from({ length: 100 }, (_, k) => {
+        const s = (k + 1) / 100;
+        return s * Math.pow(1 - s, 34 / 3 - 1);
+    });
+    const total = w.reduce((a, b) => a + b, 0);
+    return w.map((x) => x / total);
+})();
+
+/** null for silence */
 export function yin(
     frame: Float32Array,
     rate: number,
@@ -47,22 +66,36 @@ export function yin(
         d[tau] = running ? (d[tau]! * tau) / running : 1;
     }
 
-    // the first dip under the threshold, followed to the bottom of its valley
-    let tau = -1;
-    for (let t = lo; t <= hi; t++) {
-        if (d[t]! < THRESHOLD) {
-            while (t + 1 <= hi && d[t + 1]! < d[t]!) t++;
-            tau = t;
-            break;
-        }
-    }
-    if (tau < 0) return null;
+    // every valley bottom, in order of shift
+    const dips: number[] = [];
+    for (let t = lo; t <= hi; t++)
+        if (d[t]! < d[t - 1]! && (t === hi || d[t]! <= d[t + 1]!)) dips.push(t);
 
     // between samples: fit a parabola through the dip and its neighbours
-    const a = d[tau - 1] ?? d[tau]!;
-    const b = d[tau]!;
-    const c = d[tau + 1] ?? d[tau]!;
-    const bend = a - 2 * b + c;
-    const exact = bend ? tau + (a - c) / (2 * bend) : tau;
-    return { hz: rate / exact, clarity: Math.max(0, Math.min(1, 1 - b)) };
+    const exact = (tau: number): number => {
+        const a = d[tau - 1] ?? d[tau]!;
+        const b = d[tau]!;
+        const c = d[tau + 1] ?? d[tau]!;
+        const bend = a - 2 * b + c;
+        return bend ? tau + (a - c) / (2 * bend) : tau;
+    };
+
+    const odds = new Map<number, number>();
+    PRIOR.forEach((w, k) => {
+        const s = (k + 1) / 100;
+        const pick = dips.find((t) => d[t]! < s);
+        if (pick !== undefined) odds.set(pick, (odds.get(pick) ?? 0) + w);
+    });
+    const cands = [...odds.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, MAX_CANDS)
+        .flatMap(([t, p]) => [rate / exact(t), p]);
+
+    const tau = dips.find((t) => d[t]! < THRESHOLD);
+    if (tau === undefined) return { hz: 0, clarity: 0, cands };
+    return {
+        hz: rate / exact(tau),
+        clarity: Math.max(0, Math.min(1, 1 - d[tau]!)),
+        cands,
+    };
 }

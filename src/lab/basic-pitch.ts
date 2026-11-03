@@ -17,7 +17,18 @@ interface Event {
     end: number;
     midi: number;
     amplitude: number;
+    /** semitones off midi, from the model's finer pitch contour */
+    off: number;
 }
+
+// the contour's bins per semitone
+const BINS = 3;
+
+const offOf = (bends: number[] | undefined): number => {
+    if (!bends?.length) return 0;
+    const mid = [...bends].sort((a, b) => a - b)[bends.length >> 1]!;
+    return Math.max(-0.5, Math.min(0.5, mid / BINS));
+};
 
 /**
  * the model hears overtones as notes of their own: keep the loudest at any
@@ -78,10 +89,12 @@ export async function transcribe(
             end: e.startTimeSeconds + e.durationSeconds,
             midi: e.pitchMidi,
             amplitude: e.amplitude,
+            off: offOf(e.pitchBends),
         })),
     ).map((e) => ({
         pc: ((Math.round(e.midi) % 12) + 12) % 12,
         start: at + e.start,
         end: at + e.end,
+        off: e.off,
     }));
 }

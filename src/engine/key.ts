@@ -110,13 +110,25 @@ export function rankKeys(
     return keys.sort((a, b) => b.score - a.score);
 }
 
-/** the key the chords are written in: the page's without its capo, else what they say */
+/** the major key with the same notes: G for Em */
+function signature(key: string): number {
+    const c = parseChord(key)!;
+    return mod(pitch(c.root) + (minor(c.quality) ? 3 : 0));
+}
+
+/**
+ * the key the chords are written in, always: the chords decide. The page only
+ * settles what chords can't, major or its relative minor. Its key may be as heard
+ * with its capo (Bb, capo 3: G shapes) or the shapes themselves, so either reading
+ */
 export function songKey(
     said: string | null,
     slots: readonly KeySlot[],
     capo: number | null = null,
 ): string | null {
-    // pages give the key as heard; Bb with capo 3 is G shapes
-    if (said && parseChord(said)) return capo ? shiftKey(said, -capo) : said;
-    return rankKeys(slots)[0]?.key ?? null;
+    const top = rankKeys(slots)[0]?.key ?? null;
+    if (!said || !parseChord(said)) return top;
+    const readings = capo ? [shiftKey(said, -capo), said] : [said];
+    if (!top) return readings[0]!;
+    return readings.find((k) => signature(k) === signature(top)) ?? top;
 }

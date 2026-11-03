@@ -7,6 +7,7 @@ import { capture, type Capture } from '../capture.ts';
 import type { Frame } from '../listen/summary.ts';
 import { noteName, shiftKey } from '../music/theory.ts';
 import { transcribe } from './basic-pitch.ts';
+import { pretty, reportOf } from './report.ts';
 import {
     add,
     cardOf,
@@ -120,8 +121,15 @@ const chordsCheck = el('input', '');
 chordsCheck.type = 'checkbox';
 chordsToggle.append(chordsCheck, ' use the chords in the guess');
 const runBp = button('BASIC PITCH', () => void basicPitch());
-const download = button('DOWNLOAD', () => {
-    if (take) save(take, `${slug(take)}.json`);
+const download = button('DOWNLOAD REPORT', () => {
+    const t = take;
+    if (t)
+        void cardOf(t, useChords).then((c) =>
+            save(
+                pretty(reportOf(t, c, useChords)),
+                `${slug(t)}-report.json`,
+            ),
+        );
 });
 const drop = button('DELETE', () => void forget(), 'cg-btn cg-btn-quiet');
 const takeRow = el('div', 'lab-row');
@@ -397,8 +405,8 @@ async function forget(): Promise<void> {
 const slug = (t: Take): string =>
     `${(t.song ?? 'take').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${t.at.slice(0, 16).replace(/[:T]/g, '-')}`;
 
-function save(data: unknown, file: string): void {
-    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+function save(text: string, file: string): void {
+    const blob = new Blob([text], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = file;
@@ -491,7 +499,7 @@ async function scoreAll(): Promise<void> {
 
 async function exportAll(): Promise<void> {
     save(
-        await allTakes(),
+        JSON.stringify(await allTakes()),
         `melody-takes-${new Date().toISOString().slice(0, 10)}.json`,
     );
 }

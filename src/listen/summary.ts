@@ -1,6 +1,8 @@
 // Melody per chord: the notes sung over each span, and its key melody note (KMN), the one
 // the chord has to suit. Note names only: octaves don't matter
 
+import { smooth } from './smooth.ts';
+
 export interface Frame {
     /** seconds, on the same clock as the taps */
     t: number;
@@ -8,6 +10,8 @@ export interface Frame {
     clarity: number;
     /** loudness of the newest moment; missing from early takes */
     level?: number;
+    /** likely pitches, hz, probability, hz, probability…; missing from early takes */
+    cands?: number[];
 }
 
 /** the song's key, so an off-pitch note can be read as the scale note it meant */
@@ -23,6 +27,27 @@ export interface Note {
     pc: number;
     start: number;
     end: number;
+    /** semitones sung off that pitch, −0.5 to 0.5, when known */
+    off?: number;
+}
+
+/** a note as read for one chord; from: what it was heard as, if the chord moved it */
+export interface Sung extends Note {
+    from?: number;
+}
+
+/** what a pitch class scored as the KMN, and from what */
+export interface Candidate {
+    pc: number;
+    score: number;
+    /** seconds: its longest single note, and all of it together */
+    longest: number;
+    held: number;
+    count: number;
+    first: boolean;
+    beat: boolean;
+    /** a note of the chord */
+    tone: boolean;
 }
 
 export interface Heard {
@@ -36,6 +61,8 @@ export interface Heard {
     length: number;
     /** a clear winner over enough singing; otherwise the chord's melody is unknown */
     sure: boolean;
+    sung: Sung[];
+    ranked: Candidate[];
 }
 
 // a frame this periodic is a sung note, not breath or noise
@@ -54,6 +81,9 @@ const SCOOP = 0.06;
 const MIN_NOTE = 0.06;
 // off a scale note by this much (semitones), toward it: read as that note
 const SNAP = 0.2;
+// off a note of the chord by this much, toward it: read as that note. Looser than
+// the key's pull: a voice sagging into a chord tone usually meant it
+const CHORD_SNAP = 0.3;
 // a note pushed this early, carrying over the change, belongs to the next chord
 const PUSH = 0.15;
 // sung within this of the change: on the beat
@@ -128,8 +158,8 @@ function snap(m: number, scale: Set<number> | null): number {
 }
 
 /**
- * frames grouped into sung notes: a new note on a change of pitch, or the same
- * pitch sung again. Slips, breaths and scoops left out
+ * frames grouped into sung notes, once the pitch line is settled: a new note on
+ * a change of pitch, or the same pitch sung again. Slips, breaths and scoops left out
  */
 export function notes(
     frames: readonly Frame[],
@@ -149,15 +179,16 @@ export function notes(
         if (start !== undefined && end !== undefined) {
             const settled = run.filter((r) => r.t - start >= SCOOP);
             const m = median((settled.length ? settled : run).map((r) => r.m));
+            const s = snap(m, scale);
             if (end + hop - start >= MIN_NOTE)
-                out.push({ pc: pcOf(snap(m, scale)), start, end: end + hop });
+                out.push({ pc: pcOf(s), start, end: end + hop, off: m - s });
         }
         run = [];
         missed = 0;
         peak = 0;
         dip = Infinity;
     };
-    for (const f of frames) {
+    for (const f of smooth(frames)) {
         const level = f.level;
         if (f.clarity < CLEAR || f.hz <= 0) {
             if (!run.length) continue;
@@ -181,6 +212,15 @@ export function notes(
     }
     close();
     return out;
+}
+
+/** a note leaning off the chord into one of its notes: that note */
+function toChord(n: Note, chord: readonly number[] | null): Sung {
+    if (!chord || n.off === undefined || chord.includes(n.pc)) return n;
+    if (Math.abs(n.off) < CHORD_SNAP) return n;
+    const lean = Math.sign(n.off);
+    const pc = (n.pc + lean + 12) % 12;
+    return chord.includes(pc) ? { ...n, pc, off: n.off - lean, from: n.pc } : n;
 }
 
 /**
@@ -207,37 +247,35 @@ export function score(
 ): Heard[] {
     return bounds.slice(1).map((end, i) => {
         const start = bounds[i]!;
+        const chord = tones[i] ?? null;
         // a note belongs to the chord it starts in, unless it's pushed into the next
         const pushed = (n: Note, at: number): boolean =>
             n.start >= at - PUSH && n.start < at && n.end > at;
-        const mine = all.filter(
-            (n) =>
-                ((n.start >= start && n.start < end) || pushed(n, start)) &&
-                !pushed(n, end),
-        );
+        const sung = all
+            .filter(
+                (n) =>
+                    ((n.start >= start && n.start < end) ||
+                        pushed(n, start)) &&
+                    !pushed(n, end),
+            )
+            .map((n) => toChord(n, chord));
         const length = end - start;
         // held up to the next change; a pushed note counts from when it starts
         const heldFor = (n: Note): number => Math.min(n.end, end) - n.start;
-        const voiced = mine.reduce((s, n) => s + heldFor(n), 0);
+        const voiced = sung.reduce((s, n) => s + heldFor(n), 0);
 
-        const by = new Map<
-            number,
-            {
-                held: number;
-                longest: number;
-                count: number;
-                first: boolean;
-                beat: boolean;
-            }
-        >();
-        mine.forEach((n, k) => {
+        const by = new Map<number, Candidate>();
+        sung.forEach((n, k) => {
             const len = heldFor(n);
             const c = by.get(n.pc) ?? {
-                held: 0,
+                pc: n.pc,
+                score: 0,
                 longest: 0,
+                held: 0,
                 count: 0,
                 first: false,
                 beat: false,
+                tone: !!chord?.includes(n.pc),
             };
             c.held += len;
             c.longest = Math.max(c.longest, len);
@@ -246,28 +284,23 @@ export function score(
             if (n.start - start <= DOWNBEAT) c.beat = true;
             by.set(n.pc, c);
         });
-        const top = (
-            pick: (c: {
-                held: number;
-                longest: number;
-                count: number;
-            }) => number,
-        ): number => Math.max(1e-9, ...[...by.values()].map(pick));
+        const top = (pick: (c: Candidate) => number): number =>
+            Math.max(1e-9, ...[...by.values()].map(pick));
         const most = {
             held: top((c) => c.held),
             longest: top((c) => c.longest),
             count: top((c) => c.count),
         };
-        const ranked = [...by.entries()]
-            .map(([pc, c]) => ({
-                pc,
+        const ranked = [...by.values()]
+            .map((c) => ({
+                ...c,
                 score:
                     SCORE.longest * (c.longest / most.longest) +
                     SCORE.held * (c.held / most.held) +
                     SCORE.repeats * (c.count / most.count) +
                     SCORE.first * Number(c.first) +
                     SCORE.downbeat * Number(c.beat) +
-                    CHORD_TONE * Number(!!tones[i]?.includes(pc)),
+                    CHORD_TONE * Number(c.tone),
             }))
             .sort((a, b) => b.score - a.score);
         const [best, runner] = ranked;
@@ -281,6 +314,8 @@ export function score(
             voiced,
             length,
             sure,
+            sung,
+            ranked,
         };
     });
 }

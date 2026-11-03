@@ -53,6 +53,19 @@ test('capo: Bb with capo 3 is written in G', () => {
     assert.equal(sheetKey(null, lines, 3), 'G');
 });
 
+test('capo: a page key already in the shapes stays', () => {
+    const lines = sheet('G D Cmaj7', 'Cmaj7 Em7 D', 'G D C G Gsus4');
+    assert.equal(sheetKey('G', lines, 4), 'G');
+});
+
+test('a page key the chords never touch gives way', () => {
+    assert.equal(sheetKey('Eb', sheet('G D C G', 'C Em D G')), 'G');
+});
+
+test('a page key a fifth off gives way too', () => {
+    assert.equal(sheetKey('D', sheet('G D C G', 'C Em D G')), 'G');
+});
+
 test('no chords: the page key or nothing', () => {
     assert.equal(sheetKey('E', sheet('just words here')), 'E');
     assert.equal(sheetKey(null, sheet('just words here')), null);

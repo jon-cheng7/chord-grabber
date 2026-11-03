@@ -44,6 +44,10 @@ export function framer(rate: number, emit: (f: Frame) => void): Framer {
                     hz: p?.hz ?? 0,
                     clarity: p?.clarity ?? 0,
                     level: Math.sqrt(energy / HOP),
+                    // takes are kept: no more digits than matter
+                    cands: (p?.cands ?? []).map(
+                        (x) => Math.round(x * 1000) / 1000,
+                    ),
                 });
                 frame.copyWithin(0, HOP);
                 filled = SIZE - HOP;

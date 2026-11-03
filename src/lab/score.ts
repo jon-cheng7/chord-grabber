@@ -49,6 +49,12 @@ export interface Card {
     bp: Tally | null;
     /** where our notes came from: re-run on the audio, or the live frames */
     source: 'audio' | 'live';
+    /** what went into it, for the report */
+    frames: Frame[];
+    cents: number;
+    bounds: number[];
+    tones: (number[] | null)[];
+    heard: { ours: Heard[]; bp: Heard[] | null };
 }
 
 const words = (text: string | undefined): string[] =>
@@ -127,7 +133,8 @@ export async function cardOf(take: Take, useChords: boolean): Promise<Card> {
         ? chords.map((c) => (parseChord(c) ? chordNotes(c).tones : null))
         : [];
     const bounds = boundsOf(take, frames);
-    const ours = score(notes(frames, tuning(frames), key), bounds, tones);
+    const cents = tuning(frames);
+    const ours = score(notes(frames, cents, key), bounds, tones);
     const bp: Heard[] | null = take.bp ? score(take.bp, bounds, tones) : null;
     const rows = ours.map((h, i) => ({
         chord: chords[i] ?? '',
@@ -140,6 +147,11 @@ export async function cardOf(take: Take, useChords: boolean): Promise<Card> {
         ours: tally(rows, (r) => r.ours),
         bp: bp ? tally(rows, (r) => r.bp) : null,
         source,
+        frames,
+        cents,
+        bounds,
+        tones,
+        heard: { ours, bp },
     };
 }
 
