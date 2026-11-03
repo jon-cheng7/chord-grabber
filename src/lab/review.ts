@@ -6,8 +6,6 @@ import './lab.css';
 import { popIn, popOut } from '../animate.ts';
 import { chordNotes, noteName, pitch } from '../music/theory.ts';
 import { parseChord } from '../music/chord.ts';
-import { transcribe } from './basic-pitch.ts';
-import { pretty, reportOf } from './report.ts';
 import { cardOf, type Card, type Tally } from './score.ts';
 import { decode, download, putTake, slugOf, type Take } from './takes.ts';
 
@@ -62,9 +60,8 @@ export interface Review {
     tally: HTMLElement;
     /** a row per chord */
     list: HTMLElement;
-    status: HTMLElement;
-    /** confirm the rest, Basic Pitch, export, report */
-    tools: HTMLButtonElement[];
+    /** downloads the whole take, answers and audio, for the takes folder */
+    save: HTMLButtonElement;
     /** stops your voice playing back */
     stop(): void;
 }
@@ -97,7 +94,6 @@ export async function review(take: Take): Promise<Review> {
 
     const tally = el('p', 'cg-chooser-now');
     const list = el('div', 'cg-chooser-list');
-    const status = el('p', 'cg-typed-status');
 
     const keep = async (): Promise<void> => {
         take.expect = answers
@@ -106,11 +102,19 @@ export async function review(take: Take): Promise<Review> {
         await putTake(take);
         card = await cardOf(take, true);
         const left = answers.filter((a) => a === undefined).length;
-        tally.textContent = `${left ? `${left} to answer · ` : ''}OURS ${sum(card.ours)}${card.bp ? ` · BASIC PITCH ${sum(card.bp)}` : ''}`;
+        tally.textContent = left
+            ? `${left} of ${answers.length} chords still to answer`
+            : `All answered · the detector got ${sum(card.ours)}`;
     };
 
     const draw = (): void => {
-        list.replaceChildren();
+        list.replaceChildren(
+            el(
+                'p',
+                'lab-status',
+                'Tap the note that matters most over each chord. Dashed: what the detector guessed. ▶ plays your singing back. ? if you can’t tell.',
+            ),
+        );
         card.rows.forEach((row, i) => {
             const line = el('div', 'lab-review-row');
             const label = el('div', 'lab-review-chord');
@@ -160,33 +164,6 @@ export async function review(take: Take): Promise<Review> {
         });
     };
 
-    const rest = button('CONFIRM THE REST', () => {
-        card.rows.forEach((row, i) => {
-            if (answers[i] === undefined) answers[i] = row.ours.lead;
-        });
-        draw();
-        void keep();
-    });
-    rest.title = 'Every chord still unanswered takes its guess';
-    const bp = button('BASIC PITCH', () => {
-        const audio = take.audio;
-        if (!audio) return;
-        bp.disabled = true;
-        void transcribe(decode(audio.pcm), audio.at, (p) => {
-            status.textContent = `Basic Pitch: ${Math.round(p * 100)}%`;
-        }).then(async (notes) => {
-            take.bp = notes;
-            await keep();
-            status.textContent = 'Basic Pitch done';
-        });
-    });
-    bp.disabled = !take.audio;
-    const report = button('REPORT', () =>
-        download(
-            pretty(reportOf(take, card, true)),
-            `${slugOf(take)}-report.json`,
-        ),
-    );
     const save = button('EXPORT', () =>
         download(JSON.stringify(take), `${slugOf(take)}.json`),
     );
@@ -197,8 +174,7 @@ export async function review(take: Take): Promise<Review> {
     return {
         tally,
         list,
-        status,
-        tools: [rest, bp, report, save],
+        save,
         stop: () => {
             playing?.stop();
             void ctx?.close();
@@ -241,8 +217,8 @@ export async function openReview(
     );
     head.append(titles, button('×', done, 'cg-icon'));
     const foot = el('div', 'cg-chooser-foot');
-    foot.append(...r.tools, button('DONE', done, 'cg-btn cg-btn-primary'));
-    box.append(head, r.list, r.status, foot);
+    foot.append(r.save, button('DONE', done, 'cg-btn cg-btn-primary'));
+    box.append(head, r.list, foot);
     document.body.append(shade, box);
     open = [shade, box];
     popIn(shade);

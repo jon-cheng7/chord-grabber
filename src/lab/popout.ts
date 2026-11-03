@@ -111,13 +111,13 @@ export function melodyPanel(
             line.textContent = 'Saving…';
             body.replaceChildren();
         } else if (shown) {
-            title.textContent = 'Confirm each key note';
+            title.textContent = 'Saved · now the key notes';
             line.replaceWith(shown.tally);
-            body.replaceChildren(shown.list, shown.status);
-            foot.append(
-                ...shown.tools,
-                button('NEW TAKE', () => arm(), 'cg-btn cg-btn-primary'),
-            );
+            body.replaceChildren(shown.list);
+            shown.save.classList.add('cg-btn-primary');
+            const again = button('RECORD ANOTHER', () => arm());
+            again.title = 'This take stays saved; the next play records a new one';
+            foot.append(again, shown.save);
         }
     };
 
