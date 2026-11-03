@@ -36,8 +36,8 @@ function detector(h: Heard | undefined, v: Verdict | null, t0: number) {
             longest: r2(c.longest),
             held: r2(c.held),
             count: c.count,
-            first: c.first,
-            beat: c.beat,
+            first: r2(c.first),
+            beat: r2(c.beat),
             tone: c.tone,
         })),
     };
@@ -49,7 +49,7 @@ export function reportOf(take: Take, card: Card, useChords: boolean) {
     const line = smooth(card.frames);
     return {
         report: 'melody-lab',
-        version: 2,
+        version: 3,
         take: take.at,
         song: take.song ?? null,
         key: take.key ?? null,

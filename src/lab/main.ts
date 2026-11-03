@@ -3,11 +3,12 @@
 
 import '../style.css';
 import './lab.css';
-import { capture, type Capture } from '../capture.ts';
 import type { Frame } from '../listen/summary.ts';
 import { noteName, shiftKey } from '../music/theory.ts';
 import { transcribe } from './basic-pitch.ts';
+import { recordTake, type Recording } from './recorder.ts';
 import { pretty, reportOf } from './report.ts';
+import { openReview } from './review.ts';
 import {
     add,
     cardOf,
@@ -18,12 +19,11 @@ import {
 } from './score.ts';
 import {
     allTakes,
-    AUDIO_RATE,
     decode,
-    encode,
+    download,
     putTake,
     removeTake,
-    resample,
+    slugOf,
     type Take,
 } from './takes.ts';
 
@@ -73,9 +73,7 @@ const nameOf = (pc: number | null): string =>
     pc === null ? '—' : noteName(pc, false);
 
 let take: Take | null = null;
-let live: Capture | null = null;
-let chunks: Float32Array[] = [];
-let chunkAt = 0;
+let rec: Recording | null = null;
 let useChords = false;
 
 /* ---------- recording ---------- */
@@ -83,7 +81,7 @@ let useChords = false;
 const status = el(
     'p',
     'lab-status',
-    'Pick the key, press START, sing, and tap at every chord change.',
+    'Easiest from a song: menu → Record melody, then play. Or here: pick the key, START, sing, tap at every chord change.',
 );
 const keyPick = el('select', 'cg-btn lab-key');
 keyPick.add(new Option('NO KEY', ''));
@@ -121,19 +119,32 @@ const chordsCheck = el('input', '');
 chordsCheck.type = 'checkbox';
 chordsToggle.append(chordsCheck, ' use the chords in the guess');
 const runBp = button('BASIC PITCH', () => void basicPitch());
-const download = button('DOWNLOAD REPORT', () => {
+const answer = button(
+    'ANSWER',
+    () => {
+        const t = take;
+        if (t)
+            void openReview(t, () => {
+                if (take === t) open(t);
+                void refresh();
+            });
+    },
+    'cg-btn cg-btn-primary',
+);
+answer.title = 'Tap the key note for each chord';
+const reportBtn = button('DOWNLOAD REPORT', () => {
     const t = take;
     if (t)
         void cardOf(t, useChords).then((c) =>
-            save(
+            download(
                 pretty(reportOf(t, c, useChords)),
-                `${slug(t)}-report.json`,
+                `${slugOf(t)}-report.json`,
             ),
         );
 });
 const drop = button('DELETE', () => void forget(), 'cg-btn cg-btn-quiet');
 const takeRow = el('div', 'lab-row');
-takeRow.append(chordsToggle, runBp, download, drop);
+takeRow.append(answer, chordsToggle, runBp, reportBtn, drop);
 const card = el('div', 'lab-card');
 takeBox.append(el('h2', 'cg-label', 'THIS TAKE'));
 for (const input of [song, chords, expect]) {
@@ -173,7 +184,6 @@ root.append(
 );
 
 function onFrame(f: Frame): void {
-    take?.frames.push(f);
     if (f.clarity >= CLEAR && f.hz > 0) {
         const m = midi(f.hz);
         note.textContent = name(m);
@@ -189,11 +199,7 @@ function onFrame(f: Frame): void {
 
 async function begin(): Promise<void> {
     status.textContent = 'Asking for the microphone…';
-    chunks = [];
-    const got = await capture(onFrame, (pcm, at) => {
-        if (!chunks.length) chunkAt = at;
-        chunks.push(pcm);
-    });
+    const got = await recordTake({ key: keyPick.value || undefined }, onFrame);
     if (got === 'denied') {
         status.textContent = 'Microphone blocked. Allow it and try again.';
         return;
@@ -203,15 +209,8 @@ async function begin(): Promise<void> {
             'No microphone access here. It needs https or localhost.';
         return;
     }
-    live = got;
-    take = {
-        version: 2,
-        at: new Date().toISOString(),
-        device: navigator.userAgent,
-        key: keyPick.value || undefined,
-        frames: [],
-        taps: [],
-    };
+    rec = got;
+    take = got.take;
     takeBox.hidden = true;
     status.textContent = 'Listening. Tap on the first chord to start.';
     start.disabled = true;
@@ -221,29 +220,22 @@ async function begin(): Promise<void> {
 }
 
 function mark(): void {
-    if (!live || !take) return;
-    take.taps.push(live.now());
-    status.textContent = `Chord ${take.taps.length}. Tap at the next change.`;
+    if (!rec) return;
+    rec.tap();
+    status.textContent = `Chord ${rec.take.taps.length}. Tap at the next change.`;
 }
 
 async function end(): Promise<void> {
-    if (!live || !take) return;
-    const rate = live.rate;
-    take.stop = live.now();
-    live.stop();
-    live = null;
+    if (!rec) return;
+    const r = rec;
+    rec = null;
     start.disabled = false;
     stop.disabled = true;
     tap.disabled = true;
     status.textContent = 'Saving the take…';
-    if (chunks.length) {
-        const pcm = await resample(chunks, rate, AUDIO_RATE);
-        take.audio = { rate: AUDIO_RATE, at: chunkAt, pcm: encode(pcm) };
-    }
-    chunks = [];
-    await putTake(take);
+    const t = await r.finish();
     status.textContent = 'Saved. Fill in the chords and key notes to score it.';
-    open(take);
+    open(t);
     void refresh();
 }
 
@@ -274,7 +266,7 @@ function paint(): void {
         const size = clear ? 3 : 2;
         ctx.fillRect(x(f.t) - 1, y(midi(f.hz)) - 1, size, size);
     }
-    if (live) requestAnimationFrame(paint);
+    if (rec) requestAnimationFrame(paint);
 }
 
 /* ---------- one take ---------- */
@@ -307,7 +299,7 @@ const edited = (): void => {
 for (const input of [song, chords, expect])
     input.addEventListener('input', edited);
 keyPick.addEventListener('change', () => {
-    if (!take || live) return;
+    if (!take || rec) return;
     take.key = keyPick.value || undefined;
     void putTake(take);
     void render();
@@ -402,18 +394,6 @@ async function forget(): Promise<void> {
 
 /* ---------- library ---------- */
 
-const slug = (t: Take): string =>
-    `${(t.song ?? 'take').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${t.at.slice(0, 16).replace(/[:T]/g, '-')}`;
-
-function save(text: string, file: string): void {
-    const blob = new Blob([text], { type: 'application/json' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = file;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-}
-
 async function refresh(): Promise<void> {
     const takes = (await allTakes()).sort((a, b) => b.at.localeCompare(a.at));
     list.replaceChildren(
@@ -498,7 +478,7 @@ async function scoreAll(): Promise<void> {
 }
 
 async function exportAll(): Promise<void> {
-    save(
+    download(
         JSON.stringify(await allTakes()),
         `melody-takes-${new Date().toISOString().slice(0, 10)}.json`,
     );
@@ -529,7 +509,7 @@ importer.addEventListener('change', () => {
 
 // space taps, so a pedal that sends space works too
 addEventListener('keydown', (e) => {
-    if (e.key !== ' ' || !live) return;
+    if (e.key !== ' ' || !rec) return;
     e.preventDefault();
     if (!e.repeat) mark();
 });

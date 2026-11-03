@@ -193,3 +193,141 @@
 .lab-item-title {
     font-weight: 600;
 }
+
+/* answering a take: a row per chord, tap its key note */
+.lab-review-row {
+    display: grid;
+    grid-template-columns: 7rem 1fr;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--cg-line);
+}
+
+.lab-review-chord {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font: 400 0.85rem var(--cg-mono);
+}
+
+.lab-review-name {
+    color: var(--cg-fg);
+    font-weight: 600;
+}
+
+.lab-review-hear {
+    width: 2rem;
+    height: 2rem;
+    min-height: 0;
+    font-size: 0.75rem;
+}
+
+.lab-review-chip {
+    min-width: 2.6rem;
+    padding: 0.4rem 0.6rem;
+    align-items: center;
+    font: 600 0.9rem var(--cg-mono);
+}
+
+/* the guess, not yet confirmed */
+.lab-review-chip.lab-guess {
+    border-style: dashed;
+    border-color: var(--cg-muted);
+}
+
+/* a note of the chord nobody heard */
+.lab-review-chip.lab-unheard {
+    color: var(--cg-muted);
+}
+
+.lab-review-other {
+    min-height: 0;
+    padding: 0.4rem;
+    font: 400 0.8rem var(--cg-mono);
+}
+
+.lab-review-other.cg-on {
+    border-color: var(--cg-accent);
+}
+
+.lab-review .cg-chooser-foot {
+    flex-wrap: wrap;
+}
+
+/* the song view's melody pop-out: a button, then a card beside the sheet */
+.lab-fab {
+    position: fixed;
+    right: var(--cg-pad);
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+    z-index: 3;
+    border-radius: 999px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+.lab-fab[hidden],
+.lab-pop[hidden] {
+    display: none;
+}
+
+.lab-pop {
+    position: fixed;
+    right: var(--cg-pad);
+    bottom: calc(1rem + env(safe-area-inset-bottom));
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    width: min(30rem, calc(100vw - 2 * var(--cg-pad)));
+    max-height: 70dvh;
+    padding: 0.8rem var(--cg-pad);
+    border: 1px solid var(--cg-line);
+    border-radius: 14px;
+    background: var(--cg-panel);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* clear of the step bar while playing */
+body:has(.cg-has-stepbar) .lab-fab,
+body:has(.cg-has-stepbar) .lab-pop {
+    bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+.lab-pop-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.lab-pop .cg-chooser-head .cg-icon {
+    border: 0;
+    background: none;
+}
+
+.lab-pop .cg-chooser-list {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.lab-pop .cg-chooser-foot {
+    flex: none;
+    flex-wrap: wrap;
+    margin: 0;
+}
+
+.lab-pop .cg-chooser-foot:not(:empty) {
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--cg-line);
+}
+
+/* what you're singing, while recording */
+.lab-pop-note {
+    margin: 0.4rem 0;
+    color: var(--cg-accent);
+    font: 600 2.4rem var(--cg-mono);
+    text-align: center;
+}

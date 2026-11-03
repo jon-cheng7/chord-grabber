@@ -23,6 +23,19 @@ export interface Take {
     bp?: Note[];
 }
 
+/** a file name for a take: song and when */
+export const slugOf = (t: Take): string =>
+    `${(t.song ?? 'take').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${t.at.slice(0, 16).replace(/[:T]/g, '-')}`;
+
+export function download(text: string, file: string): void {
+    const blob = new Blob([text], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = file;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
 /** what Basic Pitch wants */
 export const AUDIO_RATE = 22050;
 
@@ -63,7 +76,7 @@ export function encode(pcm: Float32Array): string {
     return btoa(bin);
 }
 
-export function decode(data: string): Float32Array {
+export function decode(data: string): Float32Array<ArrayBuffer> {
     const bin = atob(data);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);

@@ -27,6 +27,7 @@ import {
 } from './music/theory.ts';
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
+import type { MelodyPanel } from './lab/site.ts';
 import { toast } from './toast.ts';
 import {
     passingGaps,
@@ -58,6 +59,9 @@ import {
     type Saved,
 } from './store.ts';
 import { numberLines, simplifyLines, transposeLines } from './transpose.ts';
+
+// dev only: sing along with playback to collect melody takes
+const lab = import.meta.env.DEV ? () => import('./lab/site.ts') : null;
 
 const MIN_SIZE = 12;
 const MAX_SIZE = 30;
@@ -724,6 +728,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         closeArranger();
         closeEditor();
         stopHeld();
+        melody?.remove();
+        melody = null;
         app.classList.remove('cg-has-stepbar');
         stepBar.remove();
         closeChooser();
@@ -988,6 +994,16 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     // step mode: one chord at a time, tap or pedal for the next
     let stepping = false;
     let cursor = 0;
+    // a melody take: the pop-out arms it, play records, pause ends it; tapped: the step last marked
+    let melody: MelodyPanel | null = null;
+    let tapped = -1;
+    void lab?.().then((m) => {
+        if (!app.contains(sheet)) return;
+        melody = m.melodyPanel(() => ({
+            song: s.title,
+            key: written ? shiftKey(written, shift) : undefined,
+        }));
+    });
     const stepBar = el('div', 'cg-stepbar');
     stepBar.hidden = true;
     const nowName = el('span', 'cg-step-now');
@@ -1032,6 +1048,10 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         cursor = Math.min(list.length - 1, Math.max(0, i));
         const at = list[cursor]!;
         holdChord(sound(drawn(at.chord)));
+        if (cursor !== tapped) {
+            melody?.tap(sound(drawn(at.chord)));
+            tapped = cursor;
+        }
         mark();
         syncOrder(at.block);
         nowName.textContent = label(at.chord);
@@ -1042,6 +1062,14 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     };
     /** at: a chord's row:piece in the full sheet, else the first on screen */
     const startStep = (at?: string): void => {
+        if (melody?.armed()) {
+            const m = melody;
+            void m.begin().then((ok) => {
+                if (ok) startStep(at);
+            });
+            return;
+        }
+        tapped = -1;
         const from =
             at ??
             [...sheet.querySelectorAll<HTMLElement>('[data-at]')].find((n) => {
@@ -1072,6 +1100,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         const at = steps()[cursor];
         stepping = false;
         stopHeld();
+        melody?.end();
         playBtn.innerHTML = PLAY_ICON;
         playBtn.setAttribute('aria-label', 'Play the chords');
         sheet.classList.remove('cg-stepping');

@@ -49,6 +49,7 @@ export function smooth(frames: readonly Frame[]): Frame[] {
     const stay = log(1 - SWITCH);
     const swap = log(SWITCH);
     const land = log(BIN / SPAN);
+    const held = log(move(0));
 
     // per frame: the candidates (sung states) and one unsung state, last
     const states = frames.map(candsOf);
@@ -85,7 +86,9 @@ export function smooth(frames: readonly Frame[]): Frame[] {
                 arg = i;
             }
         });
-        quiet += log(Math.max(1e-9, 1 - voiced));
+        // pYIN's unsung states are one per pitch, sharing what's left: priced the
+        // same as a held pitch, or a rest always outbids singing
+        quiet += log(Math.max(1e-9, 1 - voiced)) + held + land;
         from[cands.length] = arg;
         back.push(from);
         prev = score;

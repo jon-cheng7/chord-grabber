@@ -44,8 +44,9 @@ export interface Candidate {
     longest: number;
     held: number;
     count: number;
-    first: boolean;
-    beat: boolean;
+    /** seconds: how long it's held when it opens the chord, and when it's on the beat */
+    first: number;
+    beat: number;
     /** a note of the chord */
     tone: boolean;
 }
@@ -103,6 +104,9 @@ const SCORE = {
     first: 0.15,
     downbeat: 0.3,
 };
+// first and on the beat count for half just by being there, the rest by how long
+// they're held: a quick pickup on the beat mustn't outweigh a long held note
+const PLACED = 0.5;
 // a note of the chord being played is a little likelier to be the one that matters
 const CHORD_TONE = 0.1;
 
@@ -273,15 +277,15 @@ export function score(
                 longest: 0,
                 held: 0,
                 count: 0,
-                first: false,
-                beat: false,
+                first: 0,
+                beat: 0,
                 tone: !!chord?.includes(n.pc),
             };
             c.held += len;
             c.longest = Math.max(c.longest, len);
             c.count++;
-            if (k === 0) c.first = true;
-            if (n.start - start <= DOWNBEAT) c.beat = true;
+            if (k === 0) c.first = len;
+            if (n.start - start <= DOWNBEAT) c.beat = Math.max(c.beat, len);
             by.set(n.pc, c);
         });
         const top = (pick: (c: Candidate) => number): number =>
@@ -291,6 +295,8 @@ export function score(
             longest: top((c) => c.longest),
             count: top((c) => c.count),
         };
+        const placed = (len: number): number =>
+            len > 0 ? PLACED + (1 - PLACED) * (len / most.longest) : 0;
         const ranked = [...by.values()]
             .map((c) => ({
                 ...c,
@@ -298,8 +304,8 @@ export function score(
                     SCORE.longest * (c.longest / most.longest) +
                     SCORE.held * (c.held / most.held) +
                     SCORE.repeats * (c.count / most.count) +
-                    SCORE.first * Number(c.first) +
-                    SCORE.downbeat * Number(c.beat) +
+                    SCORE.first * placed(c.first) +
+                    SCORE.downbeat * placed(c.beat) +
                     CHORD_TONE * Number(c.tone),
             }))
             .sort((a, b) => b.score - a.score);
