@@ -1150,11 +1150,6 @@ body:has(.cg-has-stepbar) .cg-toast {
     gap: 0.6rem;
 }
 
-.cg-tools[hidden],
-.cg-reharm-btn[hidden] {
-    display: none;
-}
-
 .cg-reharm-btn {
     display: inline-flex;
     flex: none;
@@ -1165,7 +1160,8 @@ body:has(.cg-has-stepbar) .cg-toast {
     border: 1px solid transparent;
     border-radius: 999px;
     background:
-        linear-gradient(var(--cg-bg, #0a0a0a), var(--cg-bg, #0a0a0a)) padding-box,
+        linear-gradient(var(--cg-bg, #0a0a0a), var(--cg-bg, #0a0a0a))
+            padding-box,
         linear-gradient(90deg, #7cc8ff, #ff9f6b) border-box;
     color: var(--cg-fg);
     font: 600 0.75rem var(--cg-mono);
@@ -1892,4 +1888,211 @@ html.cg-locked body {
     color: var(--cg-fg);
     font: 600 0.75rem var(--cg-mono);
     white-space: nowrap;
+}
+
+/* Chord shapes: a card by a held chord, and a panel of the song's chords */
+
+/* a held chord shows its shape, not the phone's own menu */
+@media (hover: none) {
+    .cg-chord {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+    }
+}
+
+.cg-peek {
+    position: fixed;
+    z-index: 6;
+    padding: 0.6rem 0.7rem 0.5rem;
+    border: 1px solid var(--cg-line);
+    border-radius: 12px;
+    background: var(--cg-panel);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+
+.cg-peek[hidden],
+.cg-shapes[hidden] {
+    display: none;
+}
+
+.cg-shape-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    min-width: 7.5rem;
+}
+
+.cg-shape-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    width: 100%;
+}
+
+.cg-shape-name {
+    padding: 0.15rem 0;
+    border: 0;
+    background: none;
+    color: var(--cg-accent);
+    font: 600 1rem var(--cg-mono);
+    cursor: pointer;
+}
+
+.cg-shape-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+    color: var(--cg-muted);
+    font: 400 0.7rem var(--cg-mono);
+}
+
+/* big enough for a thumb */
+.cg-shape-step {
+    min-width: 1.9rem;
+    min-height: 1.9rem;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--cg-fg);
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+.cg-shape-step:active {
+    background: #1f1f1f;
+}
+
+.cg-shape {
+    display: block;
+    overflow: visible;
+}
+
+.cg-shape-line {
+    stroke: var(--cg-muted);
+    stroke-width: 1;
+}
+
+.cg-shape-nut {
+    stroke: var(--cg-fg);
+}
+
+.cg-shape-dot {
+    fill: var(--cg-accent);
+}
+
+.cg-shape-finger {
+    fill: var(--cg-bg, #0a0a0a);
+    font: 600 8px var(--cg-mono);
+}
+
+.cg-shape-open,
+.cg-shape-fret {
+    fill: var(--cg-muted);
+    font: 400 9px var(--cg-mono);
+}
+
+.cg-shape-note {
+    margin: 0;
+    color: var(--cg-muted);
+    font: 400 0.7rem var(--cg-mono);
+}
+
+.cg-shape-big .cg-shape {
+    width: 9rem;
+    height: auto;
+}
+
+/* the panel: a sheet along the bottom on a phone, a column on the right on a computer;
+   the song stays scrollable behind it either way */
+.cg-shapes {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    max-height: 48dvh;
+    padding: 0.8rem var(--cg-pad) calc(0.8rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--cg-line);
+    border-radius: 16px 16px 0 0;
+    background: var(--cg-panel);
+    box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* clear of the step bar while playing */
+body:has(.cg-has-stepbar) .cg-shapes {
+    bottom: calc(4.5rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 64rem) {
+    .cg-shapes {
+        top: 4.5rem;
+        bottom: 1rem;
+        left: auto;
+        right: 1rem;
+        width: 19rem;
+        max-height: none;
+        border: 1px solid var(--cg-line);
+        border-radius: 14px;
+    }
+
+    body:has(.cg-has-stepbar) .cg-shapes {
+        bottom: 5rem;
+    }
+}
+
+.cg-shapes-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.cg-shapes-head .cg-icon {
+    border: 0;
+    background: none;
+}
+
+.cg-shapes-title {
+    flex: 1;
+    margin: 0;
+    font-weight: 600;
+}
+
+.cg-shapes-lefty {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--cg-muted);
+    font-size: 0.8rem;
+}
+
+.cg-shapes-found:empty {
+    display: none;
+}
+
+.cg-shapes-found {
+    display: flex;
+    justify-content: center;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--cg-line);
+}
+
+.cg-shapes-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+    gap: 0.8rem 0.5rem;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.cg-shapes-empty {
+    margin: 0.4rem 0;
+    color: var(--cg-muted);
+    font-size: 0.85rem;
 }

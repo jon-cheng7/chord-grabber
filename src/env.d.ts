@@ -16,3 +16,9 @@ declare module '*?url' {
     const url: string;
     export default url;
 }
+
+// guitar fingerings, loaded when first asked for
+declare module '@tombatossals/chords-db/lib/guitar.json' {
+    const db: unknown;
+    export default db;
+}

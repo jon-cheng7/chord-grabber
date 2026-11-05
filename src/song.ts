@@ -28,6 +28,7 @@ import {
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
 import type { MelodyPanel, StylePanel } from './lab/site.ts';
+import { fingers } from './fingers.ts';
 import { toast } from './toast.ts';
 import {
     passingGaps,
@@ -60,8 +61,7 @@ import {
 } from './store.ts';
 import { numberLines, simplifyLines, transposeLines } from './transpose.ts';
 
-// still in the works, so dev only: reharm, and sing along with playback to collect melody takes
-const REHARM = import.meta.env.DEV;
+// dev only: sing along with playback to collect melody takes
 const lab = import.meta.env.DEV ? () => import('./lab/site.ts') : null;
 
 const MIN_SIZE = 12;
@@ -155,7 +155,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     let simple = pref<boolean>('cg-simple', false);
     let numbers = pref<boolean>('cg-numbers', false);
     let view = pref<View>('cg-view', 'scroll');
-    let reharm = REHARM && pref<boolean>('cg-reharm', false);
+    let reharm = pref<boolean>('cg-reharm', false);
     let instrument = pref<Sound>('cg-sound', 'keys');
     if (!(instrument in SOUNDS)) instrument = 'keys';
     setSound(instrument);
@@ -331,6 +331,10 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                         draw();
                     },
                 },
+                {
+                    label: 'Chord shapes',
+                    pick: () => shapes.openPanel(),
+                },
             ],
         },
         {
@@ -396,7 +400,6 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         'cg-reharm-btn',
     );
     reharmBtn.innerHTML = `${SPARK_ICON}<span>REHARM</span>`;
-    reharmBtn.hidden = !REHARM;
     const hint = el('p', 'cg-tools-hint');
     const clear = button(
         'CLEAR',
@@ -426,8 +429,6 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             : 'Nothing to redo';
         // out of the way until there's something to undo
         historyBox.hidden = !hist.past.length && !hist.future.length;
-        // without reharm the row is only for undo and a shared song's changes
-        tools.hidden = !REHARM && historyBox.hidden && !edits.length;
     };
 
     // the arrangement, always in view; tap to change it
@@ -683,7 +684,25 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy))
             goTo(pageIndex + (dx < 0 ? 1 : -1));
     });
+    // guitar shapes: hold or rest on a chord, or the panel from the menu
+    const shapes = fingers({
+        sheet,
+        nameAt: (chord) => {
+            const [row, piece] = parseAt(
+                chord.closest<HTMLElement>('[data-at]')?.dataset.at,
+            );
+            const lines = packed ? packed.lines : current().lines;
+            const name = chordAt(lines, row, piece);
+            return name ? drawn(name) : null;
+        },
+        chords: () => [
+            ...new Set(spots(current().lines).map((x) => drawn(x.chord))),
+        ],
+        hear: (name) => playChords([sound(name)]),
+    });
     sheet.addEventListener('click', (e) => {
+        // the tap that ends a hold only showed the shape
+        if (shapes.swallow()) return;
         if (stepping) {
             tapStep(e.target as Element);
             return;
@@ -740,6 +759,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     addEventListener('resize', resize);
     addEventListener('scroll', pin, { passive: true });
     leaveSong = () => {
+        shapes.remove();
         closeArranger();
         closeEditor();
         stopHeld();
@@ -759,6 +779,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     let packed: Compact | null = null;
     const draw = (): void => {
         harmony = null;
+        // key, capo or simplify may have changed what each shape is
+        shapes.refresh();
         packed = stepping ? compact(current()) : null;
         sheet.replaceChildren(
             renderSheet(packed ? display(packed.lines) : shown()),

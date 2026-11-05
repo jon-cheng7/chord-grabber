@@ -11,6 +11,9 @@ importers:
       '@spotify/basic-pitch':
         specifier: ^1.0.1
         version: 1.0.1(seedrandom@3.0.5)
+      '@tombatossals/chords-db':
+        specifier: 0.5.1
+        version: 0.5.1
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
@@ -169,6 +172,9 @@ packages:
   '@tensorflow/tfjs@3.21.0':
     resolution: {integrity: sha512-khcARd3/872llL/oF4ouR40qlT71mylU66PGT8kHP/GJ5YKj44sv8lDRjU7lOVlJK7jsJFWEsNVHI3eMc/GWNQ==}
     hasBin: true
+
+  '@tombatossals/chords-db@0.5.1':
+    resolution: {integrity: sha512-5kLLtwOxmnFfpVTYfYiw1Q22NJ8msb5JeyDLre09XnUFx2l6KSeqPtJQPsVPOak4BUenlsv/j2H65KBVhB6qgQ==}
 
   '@tonejs/midi@2.0.28':
     resolution: {integrity: sha512-RII6YpInPsOZ5t3Si/20QKpNqB1lZ2OCFJSOzJxz38YdY/3zqDr3uaml4JuCWkdixuPqP1/TBnXzhQ39csyoVg==}
@@ -894,6 +900,8 @@ snapshots:
     transitivePeerDependencies:
       - encoding
       - seedrandom
+
+  '@tombatossals/chords-db@0.5.1': {}
 
   '@tonejs/midi@2.0.28':
     dependencies:
