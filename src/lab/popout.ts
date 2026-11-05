@@ -65,7 +65,10 @@ export function melodyPanel(
     const titles = el('div', 'cg-chooser-titles');
     titles.append(title, line);
     const head = el('div', 'cg-chooser-head');
-    head.append(titles, button('×', () => close(), 'cg-icon'));
+    head.append(
+        titles,
+        button('×', () => close(), 'cg-icon'),
+    );
     const body = el('div', 'lab-pop-body');
     const foot = el('div', 'cg-chooser-foot');
     panel.append(head, body, foot);
@@ -111,12 +114,13 @@ export function melodyPanel(
             line.textContent = 'Saving…';
             body.replaceChildren();
         } else if (shown) {
-            title.textContent = 'Saved · now the key notes';
+            title.textContent = 'Saved · what was heard';
             line.replaceWith(shown.tally);
             body.replaceChildren(shown.list);
             shown.save.classList.add('cg-btn-primary');
             const again = button('RECORD ANOTHER', () => arm());
-            again.title = 'This take stays saved; the next play records a new one';
+            again.title =
+                'This take stays saved; the next play records a new one';
             foot.append(again, shown.save);
         }
     };

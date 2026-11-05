@@ -120,7 +120,7 @@ chordsCheck.type = 'checkbox';
 chordsToggle.append(chordsCheck, ' use the chords in the guess');
 const runBp = button('BASIC PITCH', () => void basicPitch());
 const answer = button(
-    'ANSWER',
+    'HEARD',
     () => {
         const t = take;
         if (t)
@@ -131,7 +131,7 @@ const answer = button(
     },
     'cg-btn cg-btn-primary',
 );
-answer.title = 'Tap the key note for each chord';
+answer.title = 'What was heard over each chord, with your singing to play back';
 const reportBtn = button('DOWNLOAD REPORT', () => {
     const t = take;
     if (t)
@@ -330,6 +330,8 @@ function cell(v: Verdict | null): HTMLTableCellElement[] {
     ];
 }
 
+const fit = (f: number | null): string => (f === null ? '—' : f.toFixed(2));
+
 const sum = (t: Tally): string =>
     t.total
         ? `${t.right} right · ${t.wrong} wrong · ${t.unsure} unsure · heard ${t.heard}/${t.total}`
@@ -358,12 +360,19 @@ async function render(): Promise<void> {
         el(
             'p',
             'lab-sum',
-            `OURS (${c.source === 'audio' ? 're-run on the audio' : 'as heard live'}): ${sum(c.ours)}`,
+            `CHORD FIT, 1 is perfect: ours ${fit(c.fit.ours)} · basic pitch ${fit(c.fit.bp)}`,
         ),
         el(
             'p',
             'lab-sum',
-            c.bp ? `BASIC PITCH: ${sum(c.bp)}` : 'BASIC PITCH: not run yet',
+            `KEY NOTE, OURS (${c.source === 'audio' ? 're-run on the audio' : 'as heard live'}): ${sum(c.ours)}`,
+        ),
+        el(
+            'p',
+            'lab-sum',
+            c.bp
+                ? `KEY NOTE, BASIC PITCH: ${sum(c.bp)}`
+                : 'BASIC PITCH: not run yet',
         ),
         c.rows.length
             ? table
@@ -415,6 +424,9 @@ async function refresh(): Promise<void> {
             li.append(
                 words,
                 button('OPEN', () => open(t)),
+                button('EXPORT', () =>
+                    download(JSON.stringify(t), `${slugOf(t)}.json`),
+                ),
             );
             return li;
         }),
@@ -423,14 +435,14 @@ async function refresh(): Promise<void> {
         list.append(el('li', 'lab-status', 'No takes yet. Record one above.'));
 }
 
-/** every take with answers, Basic Pitch run where it's missing, totals at the bottom */
+/** every take with chords, Basic Pitch run where it's missing, totals at the bottom */
 async function scoreAll(): Promise<void> {
     const takes = (await allTakes()).filter(
-        (t) => t.expect && t.taps.length > 0,
+        (t) => t.chords && t.taps.length > 0,
     );
     if (!takes.length) {
         batch.replaceChildren(
-            el('p', 'lab-status', 'No takes with answers to score yet.'),
+            el('p', 'lab-status', 'No takes with chords to score yet.'),
         );
         return;
     }
@@ -442,26 +454,41 @@ async function scoreAll(): Promise<void> {
     status.textContent = 'Scoring…';
     const table = el('table', 'lab-table');
     const head = el('tr', '');
-    for (const h of ['TAKE', 'OURS', 'BASIC PITCH'])
+    for (const h of [
+        'TAKE',
+        'FIT OURS',
+        'FIT BP',
+        'KEY NOTE OURS',
+        'KEY NOTE BP',
+    ])
         head.append(el('th', '', h));
     table.append(head);
     let ours = EMPTY;
     let bp = EMPTY;
+    const fits: { ours: number[]; bp: number[] } = { ours: [], bp: [] };
     for (const t of takes) {
         const c = await cardOf(t, useChords);
         ours = add(ours, c.ours);
         if (c.bp) bp = add(bp, c.bp);
+        if (c.fit.ours !== null) fits.ours.push(c.fit.ours);
+        if (c.fit.bp !== null) fits.bp.push(c.fit.bp);
         const row = el('tr', '');
         row.append(
             el('td', '', t.song ?? 'Untitled'),
+            el('td', '', fit(c.fit.ours)),
+            el('td', '', fit(c.fit.bp)),
             el('td', '', sum(c.ours)),
             el('td', '', c.bp ? sum(c.bp) : '—'),
         );
         table.append(row);
     }
+    const mean = (xs: number[]): number | null =>
+        xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
     const total = el('tr', 'lab-total');
     total.append(
         el('td', '', 'ALL'),
+        el('td', '', fit(mean(fits.ours))),
+        el('td', '', fit(mean(fits.bp))),
         el('td', '', sum(ours)),
         el('td', '', sum(bp)),
     );

@@ -331,3 +331,58 @@ body:has(.cg-has-stepbar) .lab-pop {
     font: 600 2.4rem var(--cg-mono);
     text-align: center;
 }
+
+/* what was heard over a chord: notes by share, then its fit */
+.lab-review-heard {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    font: 400 0.8rem var(--cg-mono);
+}
+
+.lab-review-note {
+    color: var(--cg-accent);
+    font: 600 1rem var(--cg-mono);
+}
+
+/* the style pop-out sits on the left, clear of the melody one */
+.lab-fab-style,
+.lab-pop-style {
+    right: auto;
+    left: var(--cg-pad);
+}
+
+.lab-strength {
+    flex: 1;
+    min-width: 6rem;
+    accent-color: var(--cg-accent);
+}
+
+.lab-ab-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--cg-line);
+}
+
+.lab-ab-play {
+    flex: none;
+    min-width: 6.5rem;
+}
+
+.lab-ab-chords {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font: 400 0.85rem var(--cg-mono);
+}
+
+.lab-ab-question {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin: 0.6rem 0 0;
+}

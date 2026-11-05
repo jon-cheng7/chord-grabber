@@ -11,7 +11,10 @@
         "build": "tsc --noEmit && tsc -p tsconfig.engine.json && vite build",
         "preview": "vite preview --host",
         "test": "node --test \"src/**/*.test.ts\"",
-        "format": "prettier --write ."
+        "format": "prettier --write .",
+        "corpus": "node scripts/corpus.ts data/chordonomicon_v2.csv",
+        "evaluate": "node scripts/evaluate.ts",
+        "tune": "node scripts/tune.ts"
     },
     "devDependencies": {
         "@spotify/basic-pitch": "^1.0.1",

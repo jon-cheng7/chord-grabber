@@ -2,7 +2,20 @@
 
 import { optional, parseChord } from './chord.ts';
 
-const SHARPS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const SHARPS = [
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
+];
 const FLATS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 // how each key is usually written
 const MAJOR = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -107,7 +120,20 @@ export function simplifyChord(name: string): string {
     return keep(name, `${chord.root}${kind}`);
 }
 
-const DEGREES = ['1', '♭2', '2', '♭3', '3', '4', '♯4', '5', '♭6', '6', '♭7', '7'];
+const DEGREES = [
+    '1',
+    '♭2',
+    '2',
+    '♭3',
+    '3',
+    '4',
+    '♯4',
+    '5',
+    '♭6',
+    '6',
+    '♭7',
+    '7',
+];
 
 const NUMERALS = [
     'I',
@@ -157,11 +183,16 @@ export function chordNotes(name: string): { bass: number; tones: number[] } {
     if (/sus2/.test(q)) third = 2;
     else if (/sus/.test(q)) third = 5;
     const tones = new Set([root, root + third, root + fifth].map(mod));
-    if (/maj7|M7|Δ/.test(q)) tones.add(mod(root + 11));
+    // a 9, 11 or 13 carries its seventh along, unless it's only added
+    const stacked = !/add/.test(q) && /9|11|13/.test(q);
+    if (/maj|M7|Δ/.test(q) && (/7/.test(q) || stacked))
+        tones.add(mod(root + 11));
     else if (/dim7|°7/.test(q)) tones.add(mod(root + 9));
-    else if (/7/.test(q)) tones.add(mod(root + 10));
+    else if (/7/.test(q) || stacked) tones.add(mod(root + 10));
     if (/6/.test(q)) tones.add(mod(root + 9));
     if (/9|add2/.test(q)) tones.add(mod(root + 2));
+    if (/11/.test(q)) tones.add(mod(root + 5));
+    if (/13/.test(q)) tones.add(mod(root + 9));
     const bass = c.bass ? pitch(c.bass) : root;
     return { bass, tones: [...tones] };
 }

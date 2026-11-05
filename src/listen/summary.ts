@@ -64,6 +64,8 @@ export interface Heard {
     sure: boolean;
     sung: Sung[];
     ranked: Candidate[];
+    /** each pitch class's share of the singing, on-beat notes counting extra; sums to 1 */
+    profile: number[];
 }
 
 // a frame this periodic is a sung note, not breath or noise
@@ -107,6 +109,8 @@ const SCORE = {
 // first and on the beat count for half just by being there, the rest by how long
 // they're held: a quick pickup on the beat mustn't outweigh a long held note
 const PLACED = 0.5;
+// a note sung on the change weighs this much more in the profile
+const ON_BEAT = 1.5;
 // a note of the chord being played is a little likelier to be the one that matters
 const CHORD_TONE = 0.1;
 
@@ -258,8 +262,7 @@ export function score(
         const sung = all
             .filter(
                 (n) =>
-                    ((n.start >= start && n.start < end) ||
-                        pushed(n, start)) &&
+                    ((n.start >= start && n.start < end) || pushed(n, start)) &&
                     !pushed(n, end),
             )
             .map((n) => toChord(n, chord));
@@ -309,6 +312,12 @@ export function score(
                     CHORD_TONE * Number(c.tone),
             }))
             .sort((a, b) => b.score - a.score);
+        const profile = new Array<number>(12).fill(0);
+        for (const n of sung)
+            profile[n.pc]! +=
+                heldFor(n) * (n.start - start <= DOWNBEAT ? ON_BEAT : 1);
+        const total = profile.reduce((a, b) => a + b, 0);
+        if (total > 0) profile.forEach((w, pc) => (profile[pc] = w / total));
         const [best, runner] = ranked;
         const sure =
             !!best &&
@@ -322,6 +331,7 @@ export function score(
             sure,
             sung,
             ranked,
+            profile,
         };
     });
 }

@@ -13,6 +13,28 @@ import type {
 } from './types.ts';
 
 export { rankKeys, songKey, type KeySlot } from './key.ts';
+export { melodyFit } from './fit.ts';
+export {
+    chordOf,
+    homeOf,
+    shapeOf,
+    STYLES,
+    tokenOf,
+    type Style,
+    type StyleTable,
+} from './styles.ts';
+export {
+    features,
+    modelOf,
+    poolOf,
+    restyle,
+    type Features,
+    type Model,
+    type Restyled,
+    type RestyleOptions,
+    type Weights,
+} from './style.ts';
+export { WEIGHTS } from './weights.ts';
 export type * from './types.ts';
 
 export interface Engine {

@@ -1,5 +1,6 @@
 // Lab takes: what was sung, what it should have been, kept in this browser (IndexedDB)
 
+import type { Features, Weights } from '../engine/index.ts';
 import type { Frame, Note } from '../listen/summary.ts';
 
 export interface Take {
@@ -87,35 +88,71 @@ export function decode(data: string): Float32Array<ArrayBuffer> {
 }
 
 const DB = 'cg-lab';
-const STORE = 'takes';
+// takes, and the A/B picks that train the style weights
+const STORES = ['takes', 'prefs'] as const;
+type Store = (typeof STORES)[number];
 
 function db(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-        const open = indexedDB.open(DB, 1);
-        open.onupgradeneeded = () =>
-            open.result.createObjectStore(STORE, { keyPath: 'at' });
+        const open = indexedDB.open(DB, 2);
+        open.onupgradeneeded = () => {
+            for (const name of STORES)
+                if (!open.result.objectStoreNames.contains(name))
+                    open.result.createObjectStore(name, { keyPath: 'at' });
+        };
         open.onsuccess = () => resolve(open.result);
         open.onerror = () => reject(open.error);
     });
 }
 
 async function run<T>(
+    store: Store,
     mode: IDBTransactionMode,
     work: (store: IDBObjectStore) => IDBRequest<T>,
 ): Promise<T> {
     const d = await db();
     return new Promise((resolve, reject) => {
-        const req = work(d.transaction(STORE, mode).objectStore(STORE));
+        const req = work(d.transaction(store, mode).objectStore(store));
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
     });
 }
 
 export const putTake = (take: Take): Promise<IDBValidKey> =>
-    run('readwrite', (s) => s.put(take));
+    run('takes', 'readwrite', (s) => s.put(take));
 
 export const allTakes = (): Promise<Take[]> =>
-    run('readonly', (s) => s.getAll() as IDBRequest<Take[]>);
+    run('takes', 'readonly', (s) => s.getAll() as IDBRequest<Take[]>);
 
 export const removeTake = (at: string): Promise<undefined> =>
-    run('readwrite', (s) => s.delete(at));
+    run('takes', 'readwrite', (s) => s.delete(at));
+
+/** one A/B pick: two reharms of the same passage, and which won */
+export interface Pref {
+    /** when; also its id */
+    at: string;
+    song: string;
+    style: string;
+    strength: number;
+    /** the passage heard, as slot indexes */
+    from: number;
+    to: number;
+    a: Variant;
+    b: Variant;
+    /** sounds better; more like the style */
+    better: 'a' | 'b' | 'same';
+    styled: 'a' | 'b' | 'same';
+}
+
+export interface Variant {
+    weights: Weights;
+    chords: string[];
+    /** scored over the passage heard */
+    features: Features;
+}
+
+export const putPref = (pref: Pref): Promise<IDBValidKey> =>
+    run('prefs', 'readwrite', (s) => s.put(pref));
+
+export const allPrefs = (): Promise<Pref[]> =>
+    run('prefs', 'readonly', (s) => s.getAll() as IDBRequest<Pref[]>);

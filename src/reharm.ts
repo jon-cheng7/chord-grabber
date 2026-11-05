@@ -9,6 +9,7 @@ import {
     type KeySlot,
     type Option,
     type Slot,
+    type Song,
     type Why,
 } from './engine/index.ts';
 import { isChord } from './music/chord.ts';
@@ -51,6 +52,8 @@ export const sheetKey = (
 
 export interface SheetHarmony {
     engine: Engine;
+    /** what the engine was given, for a whole-song reharm */
+    song: Song;
     /** a chord's place, as the engine knows it */
     id(row: number, piece: number): string;
     /** and back to its place in the view */
@@ -110,8 +113,10 @@ export function sheetHarmony(
             });
         }
     });
+    const song = { key, flats, slots };
     return {
-        engine: createEngine({ key, flats, slots }),
+        engine: createEngine(song),
+        song,
         id,
         place: (slot) => places.get(slot) ?? null,
     };

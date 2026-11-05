@@ -55,7 +55,11 @@ export async function recordTake(
                 if (names.length) take.chords = names.join(' ');
                 if (chunks.length) {
                     const pcm = await resample(chunks, live.rate, AUDIO_RATE);
-                    take.audio = { rate: AUDIO_RATE, at: chunkAt, pcm: encode(pcm) };
+                    take.audio = {
+                        rate: AUDIO_RATE,
+                        at: chunkAt,
+                        pcm: encode(pcm),
+                    };
                 }
                 await putTake(take);
                 return take;

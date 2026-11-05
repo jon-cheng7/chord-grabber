@@ -10,6 +10,7 @@ import {
     type Key,
 } from '../listen/summary.ts';
 import { track } from '../listen/track.ts';
+import { melodyFit } from '../engine/fit.ts';
 import { parseChord } from '../music/chord.ts';
 import { chordNotes, minor, pitch } from '../music/theory.ts';
 import { decode, resample, type Take } from './takes.ts';
@@ -32,6 +33,8 @@ export interface Row {
     expect: number | null;
     ours: Verdict;
     bp: Verdict | null;
+    /** how well each detector's melody suits the chord: −0.5 to 1, null when nothing was heard */
+    fit: { ours: number | null; bp: number | null };
 }
 
 export interface Tally {
@@ -55,6 +58,29 @@ export interface Card {
     bounds: number[];
     tones: (number[] | null)[];
     heard: { ours: Heard[]; bp: Heard[] | null };
+    /** chord fit over the whole take, by how long each chord was sung; needs no answers */
+    fit: { ours: number | null; bp: number | null };
+}
+
+// fit is judged at middling tension: neither pop-strict nor jazz-loose
+const TENSION = 0.5;
+
+/** the melody's fit to the chords as played, read without the chords' help so it can't flatter itself */
+function fitOf(heard: readonly Heard[], chords: readonly string[]) {
+    const each = heard.map((h, i) =>
+        h.voiced > 0 && chords[i] && parseChord(chords[i])
+            ? melodyFit(chords[i], h.profile, TENSION)
+            : null,
+    );
+    let sum = 0;
+    let time = 0;
+    heard.forEach((h, i) => {
+        const f = each[i];
+        if (f === null || f === undefined) return;
+        sum += f * h.voiced;
+        time += h.voiced;
+    });
+    return { each, all: time ? sum / time : null };
 }
 
 const words = (text: string | undefined): string[] =>
@@ -136,11 +162,14 @@ export async function cardOf(take: Take, useChords: boolean): Promise<Card> {
     const cents = tuning(frames);
     const ours = score(notes(frames, cents, key), bounds, tones);
     const bp: Heard[] | null = take.bp ? score(take.bp, bounds, tones) : null;
+    const oursFit = fitOf(score(notes(frames, cents, key), bounds), chords);
+    const bpFit = take.bp ? fitOf(score(take.bp, bounds), chords) : null;
     const rows = ours.map((h, i) => ({
         chord: chords[i] ?? '',
         expect: expect[i] ?? null,
         ours: verdict(h, expect[i] ?? null),
         bp: bp ? verdict(bp[i], expect[i] ?? null) : null,
+        fit: { ours: oursFit.each[i] ?? null, bp: bpFit?.each[i] ?? null },
     }));
     return {
         rows,
@@ -152,6 +181,7 @@ export async function cardOf(take: Take, useChords: boolean): Promise<Card> {
         bounds,
         tones,
         heard: { ours, bp },
+        fit: { ours: oursFit.all, bp: bpFit?.all ?? null },
     };
 }
 

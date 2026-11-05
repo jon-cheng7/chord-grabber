@@ -27,7 +27,7 @@ import {
 } from './music/theory.ts';
 import { parseSheet, type Line } from './parse.ts';
 import { printSong } from './print.ts';
-import type { MelodyPanel } from './lab/site.ts';
+import type { MelodyPanel, StylePanel } from './lab/site.ts';
 import { toast } from './toast.ts';
 import {
     passingGaps,
@@ -289,7 +289,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
                             s,
                             renderSheet(display(compact(current()).lines)),
                             keyLabel(),
-                            arrangeable ? `ORDER  ${orderTags().join('  ')}` : '',
+                            arrangeable
+                                ? `ORDER  ${orderTags().join('  ')}`
+                                : '',
                         ),
                 },
             ],
@@ -614,8 +616,16 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const sheet = el('article', 'cg-sheet');
     const pager = el('div', 'cg-pager');
     const count = el('span', 'cg-pager-count');
-    const prev = button('‹', () => goTo(pageIndex - 1), 'cg-icon cg-page-arrow');
-    const next = button('›', () => goTo(pageIndex + 1), 'cg-icon cg-page-arrow');
+    const prev = button(
+        '‹',
+        () => goTo(pageIndex - 1),
+        'cg-icon cg-page-arrow',
+    );
+    const next = button(
+        '›',
+        () => goTo(pageIndex + 1),
+        'cg-icon cg-page-arrow',
+    );
     prev.setAttribute('aria-label', 'Previous page');
     next.setAttribute('aria-label', 'Next page');
     pager.append(prev, count, next);
@@ -623,7 +633,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     const pageCount = (): number =>
         Math.max(1, Math.round(sheet.scrollWidth / step()));
     const step = (): number =>
-        sheet.clientWidth + parseFloat(getComputedStyle(sheet).columnGap || '0');
+        sheet.clientWidth +
+        parseFloat(getComputedStyle(sheet).columnGap || '0');
     const goTo = (n: number, smooth = true): void => {
         pageIndex = Math.min(pageCount() - 1, Math.max(0, n));
         sheet.scrollTo({
@@ -730,6 +741,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         stopHeld();
         melody?.remove();
         melody = null;
+        styles?.remove();
+        styles = null;
         app.classList.remove('cg-has-stepbar');
         stepBar.remove();
         closeChooser();
@@ -776,8 +789,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         if (line < 0) return list;
         const occ = v.occ[row] ?? 0;
         const original = chordAt(v.raw, row, piece);
-        const here = (e: Edit): boolean =>
-            e.line === line && e.piece === piece;
+        const here = (e: Edit): boolean => e.line === line && e.piece === piece;
         const rest = list.filter((e) => !(here(e) && e.occ === occ));
         const everyTime = rest.some((e) => here(e) && e.occ === undefined);
         // back to the sheet's own chord: no edit needed
@@ -997,12 +1009,29 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     // a melody take: the pop-out arms it, play records, pause ends it; tapped: the step last marked
     let melody: MelodyPanel | null = null;
     let tapped = -1;
+    // style A/B: two whole-song reharms, a passage of each heard, you pick
+    let styles: StylePanel | null = null;
     void lab?.().then((m) => {
         if (!app.contains(sheet)) return;
         melody = m.melodyPanel(() => ({
             song: s.title,
             key: written ? shiftKey(written, shift) : undefined,
         }));
+        styles = m.stylePanel({
+            title: s.title,
+            song: () => reading().song,
+            show,
+            hear: (chords) => playChords(chords.map((c) => sound(show(c)))),
+            apply: (changes) => {
+                const h = reading();
+                setMany(
+                    changes.flatMap((c) => {
+                        const at = h.place(c.id);
+                        return at ? [{ ...at, chord: c.chord }] : [];
+                    }),
+                );
+            },
+        });
     });
     const stepBar = el('div', 'cg-stepbar');
     stepBar.hidden = true;
@@ -1107,7 +1136,9 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         draw();
         // back in the full sheet, at the copy that was playing
         if (at) {
-            const node = sheet.querySelector(`[data-at="${at.src}:${at.piece}"]`);
+            const node = sheet.querySelector(
+                `[data-at="${at.src}:${at.piece}"]`,
+            );
             if (node) follow(node);
         }
         popOut(stepBar, () => {
@@ -1238,7 +1269,6 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     layout();
     if (view === 'scroll') window.scrollTo(0, 0);
 }
-
 
 const SPARK_ICON =
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>';
