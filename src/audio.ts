@@ -4,6 +4,10 @@ import { chordNotes } from './music/theory.ts';
 
 let ctx: AudioContext | null = null;
 let out: AudioNode | null = null;
+// straight to the speakers, no room: previews stay clear chord to chord
+let plain: AudioNode | null = null;
+let clear = false;
+const dest = (): AudioNode => (clear ? plain : out)!;
 let wet: GainNode | null = null;
 
 /** decaying noise as a room: cheap reverb without a file */
@@ -34,6 +38,9 @@ function audio(): AudioContext {
     const dry = c.createGain();
     dry.connect(master);
     dry.connect(verb);
+    const bare = c.createGain();
+    bare.connect(master);
+    plain = bare;
     ctx = c;
     out = dry;
     wet = send;
@@ -109,7 +116,7 @@ function ePiano(midi: number, at: number, level: number): Voice {
     amp.gain.linearRampToValueAtTime(level, at + 0.006);
     amp.gain.exponentialRampToValueAtTime(level * 0.35, at + 1.5);
     amp.gain.exponentialRampToValueAtTime(level * 0.08, at + 6);
-    carrier.connect(amp).connect(out!);
+    carrier.connect(amp).connect(dest());
 
     // a ringing note dies out by itself; stop only fades it sooner
     const end = run([carrier, body, tine], at, 8);
@@ -127,7 +134,7 @@ function piano(midi: number, at: number, level: number): Voice {
     const f = hz(midi);
     const amp = c.createGain();
     amp.gain.setValueAtTime(level, at);
-    amp.connect(out!);
+    amp.connect(dest());
     const oscs: OscillatorNode[] = [];
     for (let n = 1; n <= 6; n++) {
         const part = c.createGain();
@@ -164,7 +171,7 @@ function pad(midi: number, at: number, level: number): Voice {
     const amp = c.createGain();
     amp.gain.setValueAtTime(0, at);
     amp.gain.linearRampToValueAtTime(level * 0.3, at + 0.8);
-    filter.connect(amp).connect(out!);
+    filter.connect(amp).connect(dest());
     const oscs = [-9, 0, 9].map((cents) => osc(c, 'sawtooth', f, cents));
     for (const o of oscs) o.connect(filter);
     const end = run(oscs, at, 120);
@@ -183,7 +190,7 @@ function organ(midi: number, at: number, level: number): Voice {
     const amp = c.createGain();
     amp.gain.setValueAtTime(0, at);
     amp.gain.linearRampToValueAtTime(level * 0.5, at + 0.03);
-    amp.connect(out!);
+    amp.connect(dest());
     const wobble = osc(c, 'sine', 5.6);
     const depth = c.createGain();
     depth.gain.value = 7;
@@ -226,7 +233,7 @@ function guitar(midi: number, at: number, level: number): Voice {
     amp.gain.setValueAtTime(0, at);
     amp.gain.linearRampToValueAtTime(level * 0.7, at + 0.003);
     amp.gain.exponentialRampToValueAtTime(level * 0.001, at + 3);
-    filter.connect(amp).connect(out!);
+    filter.connect(amp).connect(dest());
     const oscs = [osc(c, 'sawtooth', f), osc(c, 'triangle', f, 4)];
     for (const o of oscs) o.connect(filter);
     const end = run(oscs, at, 3.2);
@@ -252,7 +259,7 @@ function bells(midi: number, at: number, level: number): Voice {
     amp.gain.setValueAtTime(0, at);
     amp.gain.linearRampToValueAtTime(level * 0.8, at + 0.004);
     amp.gain.exponentialRampToValueAtTime(level * 0.001, at + 6);
-    carrier.connect(amp).connect(out!);
+    carrier.connect(amp).connect(dest());
     const end = run([carrier, mod], at, 6.2);
     return {
         stop: (when) => {
@@ -392,22 +399,27 @@ function sound(notes: number[], at: number): Voice[] {
     return voices;
 }
 
-/** preview: one after another, voice-led */
-export function playChords(names: readonly string[], each = 0.8): void {
+// a preview chord lets go this long before the next, so it has faded when that one starts
+const LET_GO = 0.25;
+
+/** preview: one after another, voice-led, each heard on its own */
+export function playChords(names: readonly string[], each = 1.2): void {
     const c = audio();
     void c.resume();
     stopHeld();
     const start = c.currentTime + 0.05;
     let prev: number[] | null = null;
+    clear = true;
     names.forEach((name, i) => {
         const notes = voice(name, prev);
         if (!notes.length) return;
         const at = start + i * each;
         const last = i === names.length - 1;
         for (const v of sound(notes, at))
-            v.stop(at + (last ? 2.5 : each + 0.1));
+            v.stop(at + (last ? 2.5 : each - LET_GO));
         prev = notes.slice(1);
     });
+    clear = false;
 }
 
 // step mode: one chord rings until the next

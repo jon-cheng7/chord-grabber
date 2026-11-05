@@ -1021,7 +1021,11 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             title: s.title,
             song: () => reading().song,
             show,
-            hear: (chords) => playChords(chords.map((c) => sound(show(c)))),
+            hear: (chords) =>
+                playChords(
+                    chords.map((c) => sound(show(c))),
+                    1.6,
+                ),
             apply: (changes) => {
                 const h = reading();
                 setMany(
