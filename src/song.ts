@@ -60,7 +60,8 @@ import {
 } from './store.ts';
 import { numberLines, simplifyLines, transposeLines } from './transpose.ts';
 
-// dev only: sing along with playback to collect melody takes
+// still in the works, so dev only: reharm, and sing along with playback to collect melody takes
+const REHARM = import.meta.env.DEV;
 const lab = import.meta.env.DEV ? () => import('./lab/site.ts') : null;
 
 const MIN_SIZE = 12;
@@ -154,7 +155,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
     let simple = pref<boolean>('cg-simple', false);
     let numbers = pref<boolean>('cg-numbers', false);
     let view = pref<View>('cg-view', 'scroll');
-    let reharm = pref<boolean>('cg-reharm', false);
+    let reharm = REHARM && pref<boolean>('cg-reharm', false);
     let instrument = pref<Sound>('cg-sound', 'keys');
     if (!(instrument in SOUNDS)) instrument = 'keys';
     setSound(instrument);
@@ -395,6 +396,7 @@ export function renderSong(app: HTMLElement, s: Saved): void {
         'cg-reharm-btn',
     );
     reharmBtn.innerHTML = `${SPARK_ICON}<span>REHARM</span>`;
+    reharmBtn.hidden = !REHARM;
     const hint = el('p', 'cg-tools-hint');
     const clear = button(
         'CLEAR',
@@ -424,6 +426,8 @@ export function renderSong(app: HTMLElement, s: Saved): void {
             : 'Nothing to redo';
         // out of the way until there's something to undo
         historyBox.hidden = !hist.past.length && !hist.future.length;
+        // without reharm the row is only for undo and a shared song's changes
+        tools.hidden = !REHARM && historyBox.hidden && !edits.length;
     };
 
     // the arrangement, always in view; tap to change it

@@ -1150,6 +1150,11 @@ body:has(.cg-has-stepbar) .cg-toast {
     gap: 0.6rem;
 }
 
+.cg-tools[hidden],
+.cg-reharm-btn[hidden] {
+    display: none;
+}
+
 .cg-reharm-btn {
     display: inline-flex;
     flex: none;
